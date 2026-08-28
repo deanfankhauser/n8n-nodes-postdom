@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": true,
+    "removeComments": true,
+    "outDir": "./dist/"
+  },
+  "include": ["credentials/**/*.ts", "nodes/**/*.ts"]
+}

@@ -1,0 +1,118 @@
+{
+  "name": "Postdom: Trigger on a post's terminal state, then report its performance",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "event": "postStatus",
+        "postIds": "post_123, post_456"
+      },
+      "id": "9e8d7c6b-0000-4000-8000-111111111111",
+      "name": "Postdom Trigger",
+      "type": "n8n-nodes-postdom.postdomTrigger",
+      "typeVersion": 1,
+      "position": [-280, 0]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "getPerformance",
+        "postId": "={{ $json.id }}"
+      },
+      "id": "9e8d7c6b-0000-4000-8000-222222222222",
+      "name": "Get Performance",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [-60, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e8d7c6b-0001-4000-8000-aaaaaaaaaaa1",
+              "name": "message",
+              "value": "={{ 'Postdom post ' + $json.post_id + ' reached ' + $('Postdom Trigger').item.json.status + '.\\n' + $('Postdom Trigger').item.json.outcome.guidance + '\\n\\nPerformance summary: ' + $json.summary + '\\nEligibility: ' + $json.eligibility.status + '\\nUnavailable metrics stay null with availability states (available, delayed, estimable, never, unverified); they are never reported as zero.' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9e8d7c6b-0000-4000-8000-333333333333",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [160, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/REPLACE/WITH/YOUR-WEBHOOK",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9e8d7c6b-0000-4000-8000-444444444444",
+      "name": "Notify Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 0]
+    }
+  ],
+  "connections": {
+    "Postdom Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Performance": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Notify Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

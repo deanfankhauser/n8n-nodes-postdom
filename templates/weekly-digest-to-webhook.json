@@ -1,0 +1,118 @@
+{
+  "name": "Postdom: Weekly digest, formatted and delivered to a Slack-compatible webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "5f6e7d8c-0000-4000-8000-111111111111",
+      "name": "Every Monday 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-300, 0]
+    },
+    {
+      "parameters": {
+        "resource": "digest",
+        "operation": "get"
+      },
+      "id": "5f6e7d8c-0000-4000-8000-222222222222",
+      "name": "Get Digest",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [-80, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5f6e7d8c-0001-4000-8000-aaaaaaaaaaa1",
+              "name": "message",
+              "value": "={{ 'Postdom weekly digest (generated ' + $json.generated_at + ')\\n\\n' + $json.content.summary + ($json.content.coverage_notes && $json.content.coverage_notes.length ? '\\n\\nCoverage notes:\\n- ' + $json.content.coverage_notes.join('\\n- ') : '') + '\\n\\nThe digest describes observed outcomes; it does not recommend actions.' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f6e7d8c-0000-4000-8000-333333333333",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [140, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/REPLACE/WITH/YOUR-WEBHOOK",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f6e7d8c-0000-4000-8000-444444444444",
+      "name": "Notify Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [360, 0]
+    }
+  ],
+  "connections": {
+    "Every Monday 09:00": {
+      "main": [
+        [
+          {
+            "node": "Get Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Digest": {
+      "main": [
+        [
+          {
+            "node": "Format Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message": {
+      "main": [
+        [
+          {
+            "node": "Notify Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

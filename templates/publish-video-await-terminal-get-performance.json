@@ -1,0 +1,219 @@
+{
+  "name": "Postdom: Publish a video to TikTok + Reels, await the terminal state, report performance",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-111111111111",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-320, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e0c2a1b2-1111-4a67-9f00-aaaaaaaaaaa1",
+              "name": "video_url",
+              "value": "https://cdn.example.com/videos/launch-clip.mp4",
+              "type": "string"
+            },
+            {
+              "id": "e0c2a1b2-1111-4a67-9f00-aaaaaaaaaaa2",
+              "name": "caption",
+              "value": "Behind the scenes of our launch week",
+              "type": "string"
+            },
+            {
+              "id": "e0c2a1b2-1111-4a67-9f00-aaaaaaaaaaa3",
+              "name": "account_ids",
+              "value": "acc_tiktok_123, acc_instagram_456",
+              "type": "string"
+            },
+            {
+              "id": "e0c2a1b2-1111-4a67-9f00-aaaaaaaaaaa4",
+              "name": "intent",
+              "value": "Publish the weekly launch clip to TikTok and Reels from n8n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-222222222222",
+      "name": "Video Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-100, 0]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "publishVideo",
+        "accountIds": "={{ $json.account_ids }}",
+        "videoSource": "videoUrl",
+        "videoUrl": "={{ $json.video_url }}",
+        "caption": "={{ $json.caption }}",
+        "intent": "={{ $json.intent }}",
+        "planId": "",
+        "agentIdentity": "AI agent via n8n",
+        "additionalFields": {}
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-333333333333",
+      "name": "Publish to TikTok + Reels",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [120, 0]
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-444444444444",
+      "name": "Wait 1 Minute",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [340, 0],
+      "webhookId": "9c1f5c1a-8e21-4c30-9a2f-bbbbbbbbbbb1"
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "get",
+        "postId": "={{ $('Publish to TikTok + Reels').item.json.id }}"
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-555555555555",
+      "name": "Get Post",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b3d5e7f9-0000-4a11-8b22-ccccccccccc1",
+              "leftValue": "={{ $json.outcome.terminal }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-666666666666",
+      "name": "Reached Terminal State?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [780, 0]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "getPerformance",
+        "postId": "={{ $json.id }}"
+      },
+      "id": "7d9a1c1e-0b6a-4f7e-8c1a-777777777777",
+      "name": "Get Performance",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [1000, -100]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Video Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video Input": {
+      "main": [
+        [
+          {
+            "node": "Publish to TikTok + Reels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to TikTok + Reels": {
+      "main": [
+        [
+          {
+            "node": "Wait 1 Minute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1 Minute": {
+      "main": [
+        [
+          {
+            "node": "Get Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Post": {
+      "main": [
+        [
+          {
+            "node": "Reached Terminal State?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reached Terminal State?": {
+      "main": [
+        [
+          {
+            "node": "Get Performance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 1 Minute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

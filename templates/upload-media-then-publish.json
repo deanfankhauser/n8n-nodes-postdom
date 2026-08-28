@@ -1,0 +1,72 @@
+{
+  "name": "Postdom: Upload a private video, then publish by media handle",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "842f5e76-6fe3-48cc-a771-111111111111",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-420, 0]
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/video.mp4",
+        "options": {}
+      },
+      "id": "842f5e76-6fe3-48cc-a771-222222222222",
+      "name": "Read Video File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "upload",
+        "binaryPropertyName": "data",
+        "platforms": ["instagram", "tiktok"],
+        "waitForStorage": true,
+        "waitTimeoutSeconds": 120
+      },
+      "id": "842f5e76-6fe3-48cc-a771-333333333333",
+      "name": "Upload Video",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [20, 0]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "publishVideo",
+        "accountIds": "acc_tiktok_123, acc_instagram_456",
+        "videoSource": "mediaHandle",
+        "mediaHandle": "={{ $json.media_handle }}",
+        "caption": "Behind the scenes of our launch week",
+        "intent": "Upload once and publish the private media through Postdom",
+        "planId": "",
+        "agentIdentity": "AI agent via n8n",
+        "additionalFields": {}
+      },
+      "id": "842f5e76-6fe3-48cc-a771-444444444444",
+      "name": "Publish Uploaded Video",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [240, 0]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [[{"node": "Read Video File", "type": "main", "index": 0}]]
+    },
+    "Read Video File": {
+      "main": [[{"node": "Upload Video", "type": "main", "index": 0}]]
+    },
+    "Upload Video": {
+      "main": [[{"node": "Publish Uploaded Video", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "meta": {"templateCredsSetupCompleted": false}
+}

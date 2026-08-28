@@ -1,0 +1,322 @@
+{
+  "name": "Postdom: Plan-first — submit a bounded plan, await one human approval, publish under the plan",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1a2b3c4d-0000-4000-8000-111111111111",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-460, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa1",
+              "name": "account_ids",
+              "value": "acc_tiktok_123, acc_instagram_456",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa2",
+              "name": "title",
+              "value": "Week 36 product explainers",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa3",
+              "name": "objective",
+              "value": "Grow saves on product explainers with three short clips",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa4",
+              "name": "starts_at",
+              "value": "2026-09-01T09:00:00Z",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa5",
+              "name": "ends_at",
+              "value": "2026-09-08T09:00:00Z",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa6",
+              "name": "video_url",
+              "value": "https://cdn.example.com/videos/explainer-01.mp4",
+              "type": "string"
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-aaaaaaaaaaa7",
+              "name": "caption",
+              "value": "How the product actually works, in 40 seconds",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1a2b3c4d-0000-4000-8000-222222222222",
+      "name": "Plan Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-240, 0]
+    },
+    {
+      "parameters": {
+        "resource": "plan",
+        "operation": "submit",
+        "accountIds": "={{ $json.account_ids }}",
+        "title": "={{ $json.title }}",
+        "objective": "={{ $json.objective }}",
+        "startsAt": "={{ $json.starts_at }}",
+        "endsAt": "={{ $json.ends_at }}",
+        "maxPosts": 3,
+        "intent": "Weekly bounded plan submitted from n8n for one human approval",
+        "agentIdentity": "AI agent via n8n",
+        "additionalFields": {}
+      },
+      "id": "1a2b3c4d-0000-4000-8000-333333333333",
+      "name": "Submit Plan",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [-20, 0]
+    },
+    {
+      "parameters": {},
+      "id": "1a2b3c4d-0000-4000-8000-444444444444",
+      "name": "Awaiting Approval Is Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [200, 0],
+      "notes": "Submit Plan returns status requires_approval with outcome.guidance. That is the designed success path: one human approves the bounded plan in the Postdom dashboard, then every publish claiming the plan flows without per-post review."
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "minutes"
+      },
+      "id": "1a2b3c4d-0000-4000-8000-555555555555",
+      "name": "Wait 5 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [420, 0],
+      "webhookId": "9c1f5c1a-8e21-4c30-9a2f-bbbbbbbbbbb2"
+    },
+    {
+      "parameters": {
+        "resource": "plan",
+        "operation": "get",
+        "planId": "={{ $('Submit Plan').item.json.id }}"
+      },
+      "id": "1a2b3c4d-0000-4000-8000-666666666666",
+      "name": "Get Plan",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [640, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1a2b3c4d-0002-4000-8000-ccccccccccc1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a2b3c4d-0000-4000-8000-777777777777",
+      "name": "Plan Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [860, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1a2b3c4d-0003-4000-8000-ccccccccccc2",
+              "leftValue": "={{ $json.outcome.terminal }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a2b3c4d-0000-4000-8000-888888888888",
+      "name": "Still Under Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1080, 120]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "publishVideo",
+        "accountIds": "={{ $('Plan Input').item.json.account_ids }}",
+        "videoSource": "videoUrl",
+        "videoUrl": "={{ $('Plan Input').item.json.video_url }}",
+        "caption": "={{ $('Plan Input').item.json.caption }}",
+        "intent": "First explainer published under the approved weekly plan",
+        "planId": "={{ $('Submit Plan').item.json.id }}",
+        "agentIdentity": "AI agent via n8n",
+        "additionalFields": {}
+      },
+      "id": "1a2b3c4d-0000-4000-8000-999999999999",
+      "name": "Publish Under Plan",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [1080, -120]
+    },
+    {
+      "parameters": {},
+      "id": "1a2b3c4d-0000-4000-8000-aaaaaaaaaaaa",
+      "name": "Plan Closed Without Approval",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1300, 200],
+      "notes": "The plan ended as rejected, expired, or cancelled. Read $json.outcome.guidance and the reviewer feedback on the plan, then submit a revised plan."
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Plan Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Input": {
+      "main": [
+        [
+          {
+            "node": "Submit Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Plan": {
+      "main": [
+        [
+          {
+            "node": "Awaiting Approval Is Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Awaiting Approval Is Success": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Plan": {
+      "main": [
+        [
+          {
+            "node": "Plan Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Approved?": {
+      "main": [
+        [
+          {
+            "node": "Publish Under Plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still Under Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Under Review?": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan Closed Without Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
