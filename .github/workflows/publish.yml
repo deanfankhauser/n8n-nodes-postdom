@@ -5,9 +5,8 @@
 # cryptographically verify which workflow, repository, and commit built the
 # package.
 #
-# The first release uses a granular npm token stored as the NPM_TOKEN secret.
-# Once the package exists on npm, this exact public repository and workflow can
-# be configured as its OIDC trusted publisher and the token removed.
+# npm trusts this public repository and workflow through OIDC. No long-lived
+# npm credential is stored in GitHub.
 
 name: Publish n8n-nodes-postdom (provenance)
 
@@ -53,5 +52,3 @@ jobs:
 
       - name: Publish to npm with provenance
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
