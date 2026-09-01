@@ -8,12 +8,18 @@ const MEDIA_HANDLE = 'pd_media_11111111-1111-4111-8111-111111111111';
 const UPLOAD_URL = 'https://r2.example.test/workspaces/org/uploads/video.mp4?signed=once';
 
 describe('Postdom media upload execution', () => {
-	it('keeps Postdom auth off the binary PUT and keeps the signed URL out of output', async () => {
+	it.each([
+		{ baseUrl: undefined, expectedOrigin: 'https://api.postdom.com' },
+		{ baseUrl: 'https://api.example.test', expectedOrigin: 'https://api.example.test' },
+	])('keeps auth on agent requests and off the binary PUT at $expectedOrigin', async ({ baseUrl, expectedOrigin }) => {
 		const parameters: Record<string, unknown> = {
 			resource: 'media',
 			operation: 'upload',
 			binaryPropertyName: 'data',
 			platforms: ['tiktok'],
+			widthPixels: 1080,
+			heightPixels: 1920,
+			durationSeconds: 30,
 			waitForStorage: true,
 			waitTimeoutSeconds: 5,
 		};
@@ -50,7 +56,7 @@ describe('Postdom media upload execution', () => {
 			getInputData: () => [{ json: {} }],
 			getCredentials: async () => ({
 				apiKey: 'pd_live_secret-never-forwarded',
-				baseUrl: 'https://api.example.test',
+				baseUrl,
 			}),
 			getNodeParameter: (name: string) => parameters[name],
 			getNode: () => ({ name: 'Postdom', type: 'postdom', typeVersion: 1, position: [0, 0] }),
@@ -66,9 +72,13 @@ describe('Postdom media upload execution', () => {
 		const output = await new Postdom().execute.call(context);
 
 		expect(authenticated).toHaveBeenCalledTimes(2);
+		expect(authenticatedRequests[0]?.body).toStrictEqual({
+			content_type: 'video/mp4', size_bytes: 4, platforms: ['tiktok'],
+			width_pixels: 1080, height_pixels: 1920, duration_seconds: 30,
+		});
 		expect(authenticatedRequests.map((request) => request.url)).toStrictEqual([
-			'https://api.example.test/v1/media/uploads',
-			`https://api.example.test/v1/media/${MEDIA_HANDLE}`,
+			`${expectedOrigin}/v1/media/uploads`,
+			`${expectedOrigin}/v1/media/${MEDIA_HANDLE}`,
 		]);
 		expect(direct).toHaveBeenCalledTimes(1);
 		expect(directRequests[0]).toStrictEqual({

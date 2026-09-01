@@ -92,7 +92,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [200, 0],
-      "notes": "Submit Plan returns status requires_approval with outcome.guidance. That is the designed success path: one human approves the bounded plan in the Postdom dashboard, then every publish claiming the plan flows without per-post review."
+      "notes": "Submit Plan returns status requires_approval with postdom_n8n_guidance.guidance. That is the designed success path: one human approves the bounded plan in the Postdom dashboard, then every publish claiming the plan flows without per-post review."
     },
     {
       "parameters": {
@@ -160,7 +160,7 @@
           "conditions": [
             {
               "id": "1a2b3c4d-0003-4000-8000-ccccccccccc2",
-              "leftValue": "={{ $json.outcome.terminal }}",
+              "leftValue": "={{ $json.postdom_n8n_guidance.terminal }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -205,7 +205,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [1300, 200],
-      "notes": "The plan ended as rejected, expired, or cancelled. Read $json.outcome.guidance and the reviewer feedback on the plan, then submit a revised plan."
+      "notes": "The plan ended as rejected, expired, or cancelled. Read $json.postdom_n8n_guidance.guidance and the reviewer feedback on the plan, then submit a revised plan."
     }
   ],
   "connections": {

@@ -1,15 +1,18 @@
 import { randomUUID } from 'crypto';
+import type { INode } from 'n8n-workflow';
+import { NodeOperationError, sleep as n8nSleep } from 'n8n-workflow';
 
 /**
  * Pure request builders for the Postdom REST API.
  *
  * These mirror the request shapes produced by PostdomClient in the official
  * @postdom/mcp package (packages/mcp/src/index.ts in the postdom repository):
- * same paths, same JSON body keys, same platform target defaults. Keeping them
- * pure (no I/O, no n8n imports) lets unit tests assert the exact REST shapes.
+ * same paths, same JSON body keys, same platform target defaults. Keeping the
+ * builders free of I/O lets unit tests assert the exact REST shapes; the only
+ * n8n helper used here is its verification-safe sleep implementation.
  */
 
-export const DEFAULT_BASE_URL = 'https://api-web-production-4094.up.railway.app';
+export const DEFAULT_BASE_URL = 'https://api.postdom.com';
 
 export const SOURCE_HEADER = 'X-Postdom-Source';
 export const SOURCE_VALUE = 'n8n';
@@ -125,12 +128,21 @@ export interface CreateMediaUploadInput {
 	contentType: MediaContentType;
 	sizeBytes: number;
 	platforms: PostdomPlatform[];
+	widthPixels: number;
+	heightPixels: number;
+	durationSeconds: number;
 	idempotencyKey?: string;
+}
+
+export interface PostdomNodeErrorContext {
+	node: INode;
+	itemIndex?: number;
 }
 
 export function buildCreateMediaUpload(
 	baseUrl: string,
 	input: CreateMediaUploadInput,
+	errorContext: PostdomNodeErrorContext,
 ): PostdomRequest {
 	if (!(MEDIA_CONTENT_TYPES as readonly string[]).includes(input.contentType)) {
 		throw new Error('Media content type must be video/mp4 or video/quicktime');
@@ -144,6 +156,19 @@ export function buildCreateMediaUpload(
 	if (new Set(input.platforms).size !== input.platforms.length) {
 		throw new Error('Target platforms must be unique');
 	}
+	for (const [label, value] of Object.entries({
+		width: input.widthPixels,
+		height: input.heightPixels,
+		duration: input.durationSeconds,
+	})) {
+		if (!Number.isSafeInteger(value) || value < 1) {
+			throw new NodeOperationError(
+				errorContext.node,
+				`Video ${label} must be a positive integer from the actual video metadata`,
+				{ itemIndex: errorContext.itemIndex },
+			);
+		}
+	}
 	return {
 		method: 'POST',
 		url: `${baseUrl}/v1/media/uploads`,
@@ -152,6 +177,9 @@ export function buildCreateMediaUpload(
 			content_type: input.contentType,
 			size_bytes: input.sizeBytes,
 			platforms: input.platforms,
+			width_pixels: input.widthPixels,
+			height_pixels: input.heightPixels,
+			duration_seconds: input.durationSeconds,
 		},
 		json: true,
 	};
@@ -250,7 +278,7 @@ export async function waitForMediaStorage(
 	options: WaitForMediaOptions,
 ): Promise<MediaStatusResponse> {
 	const now = options.now ?? Date.now;
-	const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+	const sleep = options.sleep ?? n8nSleep;
 	const startedAt = now();
 	let delayMs = options.initialDelayMs ?? 1_000;
 	const maxDelayMs = options.maxDelayMs ?? 10_000;
@@ -492,11 +520,27 @@ export function selectTerminalEmissions(
 	return { emit, nextEmitted };
 }
 
-export interface PostdomOutcome {
+export interface PostdomN8nGuidance {
 	state: string;
 	terminal: boolean;
 	requires_human: boolean;
 	guidance: string;
+}
+
+/** Keep server evidence separate from this connector's approval/polling guidance. */
+export function withN8nGuidance<T extends Record<string, unknown>>(
+	response: T,
+	guidance: PostdomN8nGuidance,
+	errorContext: PostdomNodeErrorContext,
+) {
+	if (Object.prototype.hasOwnProperty.call(response, 'postdom_n8n_guidance')) {
+		throw new NodeOperationError(
+			errorContext.node,
+			'API response contains the reserved postdom_n8n_guidance field',
+			{ itemIndex: errorContext.itemIndex },
+		);
+	}
+	return { ...response, postdom_n8n_guidance: { ...guidance } };
 }
 
 /**
@@ -504,7 +548,7 @@ export interface PostdomOutcome {
  * is a SUCCESS state with guidance, never an error: Postdom is built so agents
  * propose and humans keep approval authority.
  */
-export function publishOutcome(status: unknown): PostdomOutcome {
+export function publishGuidance(status: unknown): PostdomN8nGuidance {
 	switch (status) {
 		case 'requires_approval':
 			return {
@@ -608,7 +652,7 @@ export function publishOutcome(status: unknown): PostdomOutcome {
  * success state right after Submit Plan: one human approves once, then every
  * publish claiming the plan flows without per-post review inside its bounds.
  */
-export function planOutcome(status: unknown): PostdomOutcome {
+export function planGuidance(status: unknown): PostdomN8nGuidance {
 	switch (status) {
 		case 'requires_approval':
 			return {

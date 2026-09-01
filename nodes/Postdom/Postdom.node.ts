@@ -37,8 +37,9 @@ import {
 	normalizeBaseUrl,
 	parseMediaStatus,
 	parseMediaUploadContract,
-	planOutcome,
-	publishOutcome,
+	planGuidance,
+	publishGuidance,
+	withN8nGuidance,
 	waitForMediaStorage,
 } from './PostdomRequests';
 
@@ -304,6 +305,36 @@ export class Postdom implements INodeType {
 				],
 				default: ['tiktok'],
 				description: 'Platforms this video will be validated for before an upload URL is issued',
+			},
+			{
+				displayName: 'Video Width (Pixels)',
+				name: 'widthPixels',
+				type: 'number',
+				typeOptions: { minValue: 1, numberPrecision: 0 },
+				required: true,
+				displayOptions: { show: { resource: ['media'], operation: ['upload'] } },
+				default: 0,
+				description: 'Actual video width in pixels. Replace the unset zero with measured metadata; do not assume a resolution.',
+			},
+			{
+				displayName: 'Video Height (Pixels)',
+				name: 'heightPixels',
+				type: 'number',
+				typeOptions: { minValue: 1, numberPrecision: 0 },
+				required: true,
+				displayOptions: { show: { resource: ['media'], operation: ['upload'] } },
+				default: 0,
+				description: 'Actual video height in pixels. Replace the unset zero with measured metadata; Postdom validates platform limits.',
+			},
+			{
+				displayName: 'Video Duration (Seconds)',
+				name: 'durationSeconds',
+				type: 'number',
+				typeOptions: { minValue: 1, numberPrecision: 0 },
+				required: true,
+				displayOptions: { show: { resource: ['media'], operation: ['upload'] } },
+				default: 0,
+				description: 'Actual positive whole-second video duration required by Postdom preflight. Zero is unset and rejected.',
 			},
 			{
 				displayName: 'Wait for Storage',
@@ -671,15 +702,22 @@ export class Postdom implements INodeType {
 					const bytes = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
 					const contentType = binary.mimeType as MediaContentType;
 					if (!(MEDIA_CONTENT_TYPES as readonly string[]).includes(contentType)) {
-						throw new Error('The binary must be video/mp4 or video/quicktime');
+						throw new NodeOperationError(
+							this.getNode(),
+							'The binary must be video/mp4 or video/quicktime',
+							{ itemIndex: i },
+						);
 					}
 					const createResponse = await callPostdom(
 						this,
 						buildCreateMediaUpload(baseUrl, {
+							widthPixels: this.getNodeParameter('widthPixels', i) as number,
+							heightPixels: this.getNodeParameter('heightPixels', i) as number,
+							durationSeconds: this.getNodeParameter('durationSeconds', i) as number,
 							contentType,
 							sizeBytes: bytes.byteLength,
 							platforms: this.getNodeParameter('platforms', i) as PostdomPlatform[],
-						}),
+						}, { node: this.getNode(), itemIndex: i }),
 					);
 					const contract = parseMediaUploadContract(
 						createResponse,
@@ -738,7 +776,11 @@ export class Postdom implements INodeType {
 				} else if (resource === 'plan' && operation === 'get') {
 					const request = buildGetPlan(baseUrl, this.getNodeParameter('planId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem({ ...response, outcome: planOutcome(response.status) }, i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						planGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'plan' && operation === 'submit') {
 					const additional = this.getNodeParameter('additionalFields', i) as IDataObject;
 					const request = buildSubmitPlan(
@@ -758,11 +800,19 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem({ ...response, outcome: planOutcome(response.status) }, i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						planGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'post' && operation === 'get') {
 					const request = buildGetPost(baseUrl, this.getNodeParameter('postId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem({ ...response, outcome: publishOutcome(response.status) }, i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						publishGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'post' && operation === 'getPerformance') {
 					const request = buildGetPostPerformance(
 						baseUrl,
@@ -794,7 +844,11 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem({ ...response, outcome: publishOutcome(response.status) }, i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						publishGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else {
 					throw new NodeOperationError(
 						this.getNode(),

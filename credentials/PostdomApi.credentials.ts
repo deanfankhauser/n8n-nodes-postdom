@@ -33,7 +33,7 @@ export class PostdomApi implements ICredentialType {
 			displayName: 'Base URL',
 			name: 'baseUrl',
 			type: 'string',
-			default: 'https://api-web-production-4094.up.railway.app',
+			default: 'https://api.postdom.com',
 			description:
 				'Postdom API origin without a trailing slash. Keep the default unless Postdom directs you to a different environment.',
 		},

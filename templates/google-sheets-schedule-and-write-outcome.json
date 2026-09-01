@@ -1,0 +1,23 @@
+{
+  "name": "Postdom + Google Sheets: schedule short-form video and write the outcome back",
+  "nodes": [
+    {"parameters": {"rule": {"interval": [{"field": "minutes", "minutesInterval": 5}]}}, "id": "b3000000-0000-4000-8000-000000000001", "name": "Every 5 Minutes", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [-660, 0]},
+    {"parameters": {"operation": "read", "documentId": {"__rl": true, "mode": "list", "value": ""}, "sheetName": {"__rl": true, "mode": "list", "value": ""}, "filtersUI": {"values": [{"lookupColumn": "status", "lookupValue": "Ready"}]}}, "id": "b3000000-0000-4000-8000-000000000002", "name": "Read Ready Video Rows", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4.6, "position": [-440, 0]},
+    {"parameters": {"resource": "post", "operation": "publishVideo", "accountIds": "={{ $json.account_ids }}", "videoSource": "videoUrl", "videoUrl": "={{ $json.video_url }}", "caption": "={{ $json.caption }}", "intent": "Schedule an approved Google Sheets content-calendar row", "planId": "", "agentIdentity": "Google Sheets via n8n", "additionalFields": {}}, "id": "b3000000-0000-4000-8000-000000000003", "name": "Schedule with Postdom", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [-220, 0]},
+    {"parameters": {"amount": 1, "unit": "minutes"}, "id": "b3000000-0000-4000-8000-000000000004", "name": "Wait for Outcome", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "position": [0, 0], "webhookId": "b3000000-0000-4000-8000-000000000014"},
+    {"parameters": {"resource": "post", "operation": "get", "postId": "={{ $('Schedule with Postdom').item.json.id }}"}, "id": "b3000000-0000-4000-8000-000000000005", "name": "Read Postdom Outcome", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [220, 0]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "b3000000-0000-4000-8000-000000000015", "leftValue": "={{ $json.postdom_n8n_guidance.terminal }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}], "combinator": "and"}, "options": {}}, "id": "b3000000-0000-4000-8000-000000000006", "name": "Terminal?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [440, 0]},
+    {"parameters": {"operation": "update", "documentId": {"__rl": true, "mode": "list", "value": ""}, "sheetName": {"__rl": true, "mode": "list", "value": ""}, "columns": {"mappingMode": "defineBelow", "value": {"post_id": "={{ $json.id }}", "status": "={{ $json.status }}", "postdom_n8n_guidance": "={{ $json.postdom_n8n_guidance.guidance }}"}, "matchingColumns": ["post_id"]}, "options": {}}, "id": "b3000000-0000-4000-8000-000000000007", "name": "Write Outcome to Google Sheets", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4.6, "position": [660, -100]}
+  ],
+  "connections": {
+    "Every 5 Minutes": {"main": [[{"node": "Read Ready Video Rows", "type": "main", "index": 0}]]},
+    "Read Ready Video Rows": {"main": [[{"node": "Schedule with Postdom", "type": "main", "index": 0}]]},
+    "Schedule with Postdom": {"main": [[{"node": "Wait for Outcome", "type": "main", "index": 0}]]},
+    "Wait for Outcome": {"main": [[{"node": "Read Postdom Outcome", "type": "main", "index": 0}]]},
+    "Read Postdom Outcome": {"main": [[{"node": "Terminal?", "type": "main", "index": 0}]]},
+    "Terminal?": {"main": [[{"node": "Write Outcome to Google Sheets", "type": "main", "index": 0}], [{"node": "Wait for Outcome", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "meta": {"templateCredsSetupCompleted": false}
+}

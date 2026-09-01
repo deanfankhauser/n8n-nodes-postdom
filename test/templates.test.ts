@@ -24,6 +24,7 @@ const TRIGGER_TYPES = new Set([
 	'n8n-nodes-base.manualTrigger',
 	'n8n-nodes-base.scheduleTrigger',
 ]);
+const SIDECAR_NODE_TYPES = new Set(['@n8n/n8n-nodes-langchain.lmChatOpenAi']);
 
 interface TemplateNode {
 	parameters: Record<string, unknown>;
@@ -173,7 +174,10 @@ describe('workflow templates', () => {
 						queue.push(next);
 					}
 				}
-				for (const node of workflow.nodes) expect(visited.has(node.name)).toBe(true);
+				for (const node of workflow.nodes) {
+					if (SIDECAR_NODE_TYPES.has(node.type)) continue;
+					expect(visited.has(node.name)).toBe(true);
+				}
 			});
 
 			it('embeds no credential IDs, so imports never point at foreign credentials', () => {

@@ -102,7 +102,7 @@
           "conditions": [
             {
               "id": "b3d5e7f9-0000-4a11-8b22-ccccccccccc1",
-              "leftValue": "={{ $json.outcome.terminal }}",
+              "leftValue": "={{ $json.postdom_n8n_guidance.terminal }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",

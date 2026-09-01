@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { INode } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
+import { PostdomApi } from '../credentials/PostdomApi.credentials';
 import type { PostdomAccount } from '../nodes/Postdom/PostdomRequests';
 import {
 	buildConnectAccount,
@@ -22,8 +25,8 @@ import {
 	normalizeBaseUrl,
 	parseMediaStatus,
 	parseMediaUploadContract,
-	planOutcome,
-	publishOutcome,
+	planGuidance,
+	publishGuidance,
 	selectTerminalEmissions,
 	TERMINAL_POST_STATUSES,
 	waitForMediaStorage,
@@ -31,6 +34,17 @@ import {
 
 const BASE = 'https://api.example.test';
 const MEDIA_HANDLE = 'pd_media_11111111-1111-4111-8111-111111111111';
+const ERROR_CONTEXT = {
+	node: {
+		id: 'postdom-test-node',
+		name: 'Postdom',
+		type: 'n8n-nodes-postdom.postdom',
+		typeVersion: 1,
+		position: [0, 0],
+		parameters: {},
+	} as INode,
+	itemIndex: 0,
+};
 
 const READ_HEADERS = {
 	Accept: 'application/json',
@@ -47,12 +61,28 @@ describe('normalizeBaseUrl', () => {
 	it('falls back to the hosted default', () => {
 		expect(normalizeBaseUrl(undefined)).toBe(DEFAULT_BASE_URL);
 		expect(normalizeBaseUrl('  ')).toBe(DEFAULT_BASE_URL);
-		expect(DEFAULT_BASE_URL).toBe('https://api-web-production-4094.up.railway.app');
+		expect(DEFAULT_BASE_URL).toBe('https://api.postdom.com');
 	});
 
 	it('strips trailing slashes', () => {
 		expect(normalizeBaseUrl('https://api.example.test/')).toBe('https://api.example.test');
 		expect(normalizeBaseUrl('https://api.example.test//')).toBe('https://api.example.test');
+	});
+});
+
+describe('workspace-key credential boundary', () => {
+	it('uses the canonical API default and generic key auth, not an OAuth refresh credential', () => {
+		const credential = new PostdomApi();
+		expect(credential.properties.map(({ name }) => name)).toStrictEqual(['apiKey', 'baseUrl']);
+		expect(credential.properties.find(({ name }) => name === 'baseUrl')?.default).toBe(DEFAULT_BASE_URL);
+		expect(credential.properties.find(({ name }) => name === 'apiKey')?.typeOptions?.password).toBe(true);
+		expect(credential).not.toHaveProperty('extends');
+		expect(credential.authenticate).toStrictEqual({
+			type: 'generic',
+			properties: { headers: { Authorization: '=Bearer {{$credentials.apiKey}}' } },
+		});
+		expect(credential.test.request.url).toBe('/v1/workspace/status');
+		expect(JSON.stringify(credential)).not.toMatch(/oauth\/token|refresh_token|client_secret/);
 	});
 });
 
@@ -101,9 +131,10 @@ describe('media upload requests', () => {
 			buildCreateMediaUpload(BASE, {
 				contentType: 'video/mp4',
 				sizeBytes: 4,
+				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
 				platforms: ['tiktok', 'instagram'],
 				idempotencyKey: 'media-key-1',
-			}),
+			}, ERROR_CONTEXT),
 		).toStrictEqual({
 			method: 'POST',
 			url: `${BASE}/v1/media/uploads`,
@@ -111,10 +142,23 @@ describe('media upload requests', () => {
 			body: {
 				content_type: 'video/mp4',
 				size_bytes: 4,
+				width_pixels: 1080, height_pixels: 1920, duration_seconds: 30,
 				platforms: ['tiktok', 'instagram'],
 			},
 			json: true,
 		});
+	});
+
+	it.each(['widthPixels', 'heightPixels', 'durationSeconds'] as const)('rejects missing or invalid %s', (field) => {
+		for (const invalid of [undefined, null, 0, -1, 1.5, NaN]) {
+			const buildInvalid = () => buildCreateMediaUpload(BASE, {
+				contentType: 'video/mp4', sizeBytes: 4, platforms: ['tiktok'],
+				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
+				[field]: invalid as unknown as number,
+			}, ERROR_CONTEXT);
+			expect(buildInvalid).toThrowError(NodeOperationError);
+			expect(buildInvalid).toThrowError('positive integer');
+		}
 	});
 
 	it('builds the encoded status read and rejects invalid handles', () => {
@@ -174,8 +218,9 @@ describe('media upload requests', () => {
 			buildCreateMediaUpload(BASE, {
 				contentType: 'video/mp4',
 				sizeBytes: 500 * 1024 * 1024 + 1,
+				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
 				platforms: ['tiktok'],
-			}),
+			}, ERROR_CONTEXT),
 		).toThrowError('Media size');
 	});
 
@@ -580,25 +625,25 @@ describe('selectTerminalEmissions', () => {
 	});
 });
 
-describe('publishOutcome', () => {
+describe('publishGuidance', () => {
 	it('treats requires_approval as a success state with approval guidance, never an error', () => {
-		const outcome = publishOutcome('requires_approval');
-		expect(outcome.state).toBe('requires_approval');
-		expect(outcome.terminal).toBe(false);
-		expect(outcome.requires_human).toBe(true);
-		expect(outcome.guidance).toMatch(/^Success:/);
-		expect(outcome.guidance).toContain('not an error');
+		const guidance = publishGuidance('requires_approval');
+		expect(guidance.state).toBe('requires_approval');
+		expect(guidance.terminal).toBe(false);
+		expect(guidance.requires_human).toBe(true);
+		expect(guidance.guidance).toMatch(/^Success:/);
+		expect(guidance.guidance).toContain('not an error');
 	});
 
 	it('marks draft (L0 Manual) as requiring a human without failing', () => {
-		const outcome = publishOutcome('draft');
-		expect(outcome.requires_human).toBe(true);
-		expect(outcome.terminal).toBe(false);
+		const guidance = publishGuidance('draft');
+		expect(guidance.requires_human).toBe(true);
+		expect(guidance.terminal).toBe(false);
 	});
 
 	it('marks exactly the terminal statuses as terminal', () => {
 		for (const status of TERMINAL_POST_STATUSES) {
-			expect(publishOutcome(status).terminal).toBe(true);
+			expect(publishGuidance(status).terminal).toBe(true);
 		}
 		for (const status of [
 			'draft',
@@ -607,29 +652,29 @@ describe('publishOutcome', () => {
 			'scheduled',
 			'publishing',
 		]) {
-			expect(publishOutcome(status).terminal).toBe(false);
+			expect(publishGuidance(status).terminal).toBe(false);
 		}
 	});
 
 	it('never throws on unknown statuses', () => {
-		expect(publishOutcome('something_new').state).toBe('something_new');
-		expect(publishOutcome(undefined).state).toBe('unknown');
-		expect(publishOutcome(7).state).toBe('unknown');
+		expect(publishGuidance('something_new').state).toBe('something_new');
+		expect(publishGuidance(undefined).state).toBe('unknown');
+		expect(publishGuidance(7).state).toBe('unknown');
 	});
 });
 
-describe('planOutcome', () => {
+describe('planGuidance', () => {
 	it('treats requires_approval as the designed plan-first success state', () => {
-		const outcome = planOutcome('requires_approval');
-		expect(outcome.requires_human).toBe(true);
-		expect(outcome.terminal).toBe(false);
-		expect(outcome.guidance).toMatch(/^Success:/);
+		const guidance = planGuidance('requires_approval');
+		expect(guidance.requires_human).toBe(true);
+		expect(guidance.terminal).toBe(false);
+		expect(guidance.guidance).toMatch(/^Success:/);
 	});
 
 	it('marks approved as terminal with publish-under-plan guidance', () => {
-		const outcome = planOutcome('approved');
-		expect(outcome.terminal).toBe(true);
-		expect(outcome.guidance).toContain('plan ID');
+		const guidance = planGuidance('approved');
+		expect(guidance.terminal).toBe(true);
+		expect(guidance.guidance).toContain('plan ID');
 	});
 
 	it('covers every plan_status enum value plus unknowns', () => {
@@ -641,8 +686,8 @@ describe('planOutcome', () => {
 			'expired',
 			'cancelled',
 		]) {
-			expect(planOutcome(status).state).toBe(status);
+			expect(planGuidance(status).state).toBe(status);
 		}
-		expect(planOutcome(null).state).toBe('unknown');
+		expect(planGuidance(null).state).toBe('unknown');
 	});
 });
