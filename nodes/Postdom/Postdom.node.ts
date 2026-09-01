@@ -717,7 +717,7 @@ export class Postdom implements INodeType {
 							contentType,
 							sizeBytes: bytes.byteLength,
 							platforms: this.getNodeParameter('platforms', i) as PostdomPlatform[],
-						}),
+						}, { node: this.getNode(), itemIndex: i }),
 					);
 					const contract = parseMediaUploadContract(
 						createResponse,
@@ -776,7 +776,11 @@ export class Postdom implements INodeType {
 				} else if (resource === 'plan' && operation === 'get') {
 					const request = buildGetPlan(baseUrl, this.getNodeParameter('planId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(response, planGuidance(response.status)), i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						planGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'plan' && operation === 'submit') {
 					const additional = this.getNodeParameter('additionalFields', i) as IDataObject;
 					const request = buildSubmitPlan(
@@ -796,11 +800,19 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(response, planGuidance(response.status)), i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						planGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'post' && operation === 'get') {
 					const request = buildGetPost(baseUrl, this.getNodeParameter('postId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(response, publishGuidance(response.status)), i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						publishGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else if (resource === 'post' && operation === 'getPerformance') {
 					const request = buildGetPostPerformance(
 						baseUrl,
@@ -832,7 +844,11 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(response, publishGuidance(response.status)), i));
+					returnData.push(toItem(withN8nGuidance(
+						response,
+						publishGuidance(response.status),
+						{ node: this.getNode(), itemIndex: i },
+					), i));
 				} else {
 					throw new NodeOperationError(
 						this.getNode(),

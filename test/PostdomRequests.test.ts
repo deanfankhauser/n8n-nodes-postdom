@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { INode } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
 import { PostdomApi } from '../credentials/PostdomApi.credentials';
 import type { PostdomAccount } from '../nodes/Postdom/PostdomRequests';
@@ -32,6 +34,17 @@ import {
 
 const BASE = 'https://api.example.test';
 const MEDIA_HANDLE = 'pd_media_11111111-1111-4111-8111-111111111111';
+const ERROR_CONTEXT = {
+	node: {
+		id: 'postdom-test-node',
+		name: 'Postdom',
+		type: 'n8n-nodes-postdom.postdom',
+		typeVersion: 1,
+		position: [0, 0],
+		parameters: {},
+	} as INode,
+	itemIndex: 0,
+};
 
 const READ_HEADERS = {
 	Accept: 'application/json',
@@ -121,7 +134,7 @@ describe('media upload requests', () => {
 				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
 				platforms: ['tiktok', 'instagram'],
 				idempotencyKey: 'media-key-1',
-			}),
+			}, ERROR_CONTEXT),
 		).toStrictEqual({
 			method: 'POST',
 			url: `${BASE}/v1/media/uploads`,
@@ -138,11 +151,13 @@ describe('media upload requests', () => {
 
 	it.each(['widthPixels', 'heightPixels', 'durationSeconds'] as const)('rejects missing or invalid %s', (field) => {
 		for (const invalid of [undefined, null, 0, -1, 1.5, NaN]) {
-			expect(() => buildCreateMediaUpload(BASE, {
+			const buildInvalid = () => buildCreateMediaUpload(BASE, {
 				contentType: 'video/mp4', sizeBytes: 4, platforms: ['tiktok'],
 				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
 				[field]: invalid as unknown as number,
-			})).toThrowError('positive integer');
+			}, ERROR_CONTEXT);
+			expect(buildInvalid).toThrowError(NodeOperationError);
+			expect(buildInvalid).toThrowError('positive integer');
 		}
 	});
 
@@ -205,7 +220,7 @@ describe('media upload requests', () => {
 				sizeBytes: 500 * 1024 * 1024 + 1,
 				widthPixels: 1080, heightPixels: 1920, durationSeconds: 30,
 				platforms: ['tiktok'],
-			}),
+			}, ERROR_CONTEXT),
 		).toThrowError('Media size');
 	});
 

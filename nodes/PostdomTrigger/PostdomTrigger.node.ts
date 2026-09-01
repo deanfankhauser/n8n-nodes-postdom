@@ -2,6 +2,7 @@ import type {
 	IDataObject,
 	IHttpRequestOptions,
 	INodeExecutionData,
+	INode,
 	INodeType,
 	INodeTypeDescription,
 	IPollFunctions,
@@ -110,24 +111,24 @@ export class PostdomTrigger implements INodeType {
 		if (isManual) {
 			// Manual executions emit the current snapshot of every watched post,
 			// terminal or not, so the workflow can be built against real data.
-			const sample = polled.map(({ postId }) => toTriggerItem(snapshots.get(postId)!));
+			const sample = polled.map(({ postId }) => toTriggerItem(snapshots.get(postId)!, this.getNode()));
 			return sample.length > 0 ? [sample] : null;
 		}
 
 		const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 		const { emit, nextEmitted } = selectTerminalEmissions(polled, staticData.emitted ?? {});
 		// Do not mark evidence delivered if constructing the output fails.
-		const items = emit.map(({ postId }) => toTriggerItem(snapshots.get(postId)!));
+		const items = emit.map(({ postId }) => toTriggerItem(snapshots.get(postId)!, this.getNode()));
 		staticData.emitted = nextEmitted;
 		return items.length === 0 ? null : [items];
 	}
 }
 
-function toTriggerItem(post: IDataObject): INodeExecutionData {
+function toTriggerItem(post: IDataObject, node: INode): INodeExecutionData {
 	const status = post.status;
 	return {
 		json: {
-			...withN8nGuidance(post, publishGuidance(status)),
+			...withN8nGuidance(post, publishGuidance(status), { node }),
 			event: 'postStatus',
 			terminal: isTerminalPostStatus(status),
 			terminal_states: [...TERMINAL_POST_STATUSES],

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import { sleep as n8nSleep } from 'n8n-workflow';
+import type { INode } from 'n8n-workflow';
+import { NodeOperationError, sleep as n8nSleep } from 'n8n-workflow';
 
 /**
  * Pure request builders for the Postdom REST API.
@@ -133,9 +134,15 @@ export interface CreateMediaUploadInput {
 	idempotencyKey?: string;
 }
 
+export interface PostdomNodeErrorContext {
+	node: INode;
+	itemIndex?: number;
+}
+
 export function buildCreateMediaUpload(
 	baseUrl: string,
 	input: CreateMediaUploadInput,
+	errorContext: PostdomNodeErrorContext,
 ): PostdomRequest {
 	if (!(MEDIA_CONTENT_TYPES as readonly string[]).includes(input.contentType)) {
 		throw new Error('Media content type must be video/mp4 or video/quicktime');
@@ -155,7 +162,11 @@ export function buildCreateMediaUpload(
 		duration: input.durationSeconds,
 	})) {
 		if (!Number.isSafeInteger(value) || value < 1) {
-			throw new Error(`Video ${label} must be a positive integer from the actual video metadata`);
+			throw new NodeOperationError(
+				errorContext.node,
+				`Video ${label} must be a positive integer from the actual video metadata`,
+				{ itemIndex: errorContext.itemIndex },
+			);
 		}
 	}
 	return {
@@ -520,9 +531,14 @@ export interface PostdomN8nGuidance {
 export function withN8nGuidance<T extends Record<string, unknown>>(
 	response: T,
 	guidance: PostdomN8nGuidance,
+	errorContext: PostdomNodeErrorContext,
 ) {
 	if (Object.prototype.hasOwnProperty.call(response, 'postdom_n8n_guidance')) {
-		throw new Error('API response contains the reserved postdom_n8n_guidance field');
+		throw new NodeOperationError(
+			errorContext.node,
+			'API response contains the reserved postdom_n8n_guidance field',
+			{ itemIndex: errorContext.itemIndex },
+		);
 	}
 	return { ...response, postdom_n8n_guidance: { ...guidance } };
 }
