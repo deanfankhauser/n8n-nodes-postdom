@@ -1,6 +1,6 @@
 # n8n-nodes-postdom
 
-This is an n8n community node for [Postdom](https://postdom.com), the social publishing workspace built for AI agents. It lets n8n workflows upload video directly to private Postdom storage, publish short-form video, submit bounded publication plans, and read normalized performance data from a Postdom workspace. A companion polling trigger starts workflows when a watched post reaches a terminal publish state.
+Use [Postdom](https://postdom.com) in n8n to schedule and publish short-form video to TikTok, Instagram Reels, and YouTube Shorts, then read approval-aware outcomes and normalized performance. The node works as an AI Agent tool and exposes the same agent-authority social media API and MCP boundary as Postdom's hosted Connect Layer. It also uploads video directly to private Postdom storage and submits bounded publication plans.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
@@ -43,7 +43,7 @@ Credential fields:
 | Field | Default | Notes |
 | --- | --- | --- |
 | API Key | — | The `pd_live_` workspace agent key. |
-| Base URL | `https://api-web-production-4094.up.railway.app` | Postdom API origin. Keep the default unless Postdom directs you elsewhere. |
+| Base URL | `https://api.postdom.com` | Postdom API origin. Keep the default unless Postdom directs you elsewhere. |
 
 The credential test calls `GET /v1/workspace/status`, so a freshly saved credential verifies against your real workspace immediately.
 
@@ -74,7 +74,7 @@ Every Postdom API write request carries an `Idempotency-Key` header. Leave the o
 
 **Postdom Trigger** is a separate polling trigger node ("Post Status"). Give it a comma-separated list of post IDs (as returned by Publish Video) and it starts the workflow when a watched post reaches a **terminal** state: `published`, `partial`, `failed`, `rejected`, `missed_approval`, or `missed_schedule`. In-flight states (`draft`, `requires_approval`, `changes_requested`, `scheduled`, `publishing`) never fire.
 
-- Each emitted item is the full post read plus `terminal: true` and an `outcome` object with honest guidance.
+- Each emitted item is the full post read plus `terminal: true` and a `postdom_n8n_guidance` object with approval/polling guidance.
 - Deduplication uses n8n workflow static data: a post fires once per terminal state, across polls and n8n restarts.
 - Testing the trigger manually emits the current snapshot of every watched post (terminal or not) so you can build the rest of the workflow against real data.
 - The trigger polls each watched ID individually because agent credentials are scoped to per-post reads; Postdom does not expose an agent-scope list-posts endpoint yet.
@@ -83,8 +83,10 @@ Every Postdom API write request carries an `Idempotency-Key` header. Leave the o
 
 Postdom is agent-native: agents propose, humans keep approval authority. The node encodes that instead of mirroring HTTP:
 
-- **A publish that lands in review is a success, never an error.** Publish Video, Post Get, Plan Submit, and Plan Get responses carry an `outcome` object: `{ state, terminal, requires_human, guidance }`. A publish with `status: requires_approval` returns `outcome.requires_human: true` and guidance pointing at the dashboard approval and the trigger — the workflow keeps running.
-- **Plan-first is a first-class flow.** Submit Plan → one human approval → Publish Video with the Plan ID field set; publishes inside the plan's window and budget flow without per-post review. `outcome` on Plan Get tells you exactly when to start publishing.
+- **A publish that lands in review is a success, never an error.** Publish Video, Post Get, Plan Submit, and Plan Get responses carry local `postdom_n8n_guidance`: `{ state, terminal, requires_human, guidance }`. A publish with `status: requires_approval` returns `postdom_n8n_guidance.requires_human: true` and guidance pointing at the dashboard approval and the trigger — the workflow keeps running.
+- **Plan-first is a first-class flow.** Submit Plan → one human approval → Publish Video with the Plan ID field set; publishes inside the plan's window and budget flow without per-post review. `postdom_n8n_guidance` on Plan Get tells you exactly when to start publishing.
+- **Server evidence is never guidance.** API `outcome` remains untouched, including measured values, availability state, reason, source, observation timestamps, and nulls. The node never invents `outcome` when the API omits it. If the API ever uses the reserved `postdom_n8n_guidance` namespace, the node fails visibly rather than overwriting data.
+- **Versioned guidance namespace.** The `0.3.0` node and its templates use `postdom_n8n_guidance`; do not pair these templates with the older `0.2.0` field layout.
 - **Performance reads are honest.** Metric availability states (`available`, `delayed(2-3d)`, `estimable`, `never`, `unverified`) are passed through per metric with reasons. Unavailable metrics stay `null`; they are never coerced to zero, and failed publishes are reported ineligible instead of measuring nothing quietly.
 
 ## Workflow templates
@@ -94,7 +96,7 @@ Importable n8n workflow exports live in [`templates/`](templates/):
 | Template | Flow |
 | --- | --- |
 | `upload-media-then-publish.json` | Read a local video binary → Upload directly to private storage → Publish Video using the returned media handle. |
-| `publish-video-await-terminal-get-performance.json` | Existing public Video URL → Publish Video to TikTok + Reels → wait/poll until `outcome.terminal` → Get Performance. |
+| `publish-video-await-terminal-get-performance.json` | Existing public Video URL → Publish Video to TikTok + Reels → wait/poll until `postdom_n8n_guidance.terminal` → Get Performance. |
 | `plan-first-approval-then-publish.json` | Submit Plan → `requires_approval` handled as the designed success path → poll Plan Get until approved → Publish Video under the plan ID. |
 | `weekly-digest-to-webhook.json` | Weekly schedule → Get Digest → format → notify a Slack-compatible webhook. |
 | `post-terminal-trigger-performance-report.json` | Postdom Trigger (Post Status) → Get Performance → formatted report to a webhook. |
@@ -120,16 +122,20 @@ Import via **Workflows → Add workflow → Import from file**, then attach your
 
 1. Add **Postdom** with Resource `Plan`, Operation `Submit`.
 2. Set Account IDs `acc_123, acc_456` (from Account Get Many), Title `Week 36 push`, Objective `Grow saves on product explainers`, Starts At `2026-09-01T09:00:00Z`, Ends At `2026-09-08T09:00:00Z`, Max Posts `5`, Intent `Scheduled weekly plan from n8n`.
-3. The response comes back with `status: requires_approval` and `outcome.guidance` — that is the designed success path, not an error. The plan waits for one human approval in the Postdom dashboard. Poll it with Resource `Plan`, Operation `Get` using the returned plan ID, and read the reviewer's structured feedback from the response.
+3. The response comes back with `status: requires_approval` and `postdom_n8n_guidance.guidance` — that is the designed success path, not an error. The plan waits for one human approval in the Postdom dashboard. Poll it with Resource `Plan`, Operation `Get` using the returned plan ID, and read the reviewer's structured feedback from the response.
 
 ### Post: publish a video
 
 1. Add **Postdom** with Resource `Post`, Operation `Publish Video`.
 2. Choose exactly one Video Source: a Media Handle returned by Media Upload, or the existing Video URL path for a publicly fetchable file. Set Account IDs, Caption, and Intent. Set the Plan ID field to publish under an approved plan, and Agent Identity to tell the human reviewer who is publishing. Optionally set Publish At (UTC) under Additional Fields.
-3. Every publish is created private-by-default and AI-disclosed on each platform (TikTok `SELF_ONLY`, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure). Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `outcome.guidance`, never an error.
+3. Every publish is created private-by-default and AI-disclosed on each platform (TikTok `SELF_ONLY`, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure). Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `postdom_n8n_guidance.guidance`, never an error.
 4. Read the outcome with Operation `Get` (or the **Postdom Trigger**), then measure with Operation `Get Performance` once the post has been live for a while.
 
 ### Media: upload a private video
+
+Supply the actual video's positive-integer **Video Width (Pixels)**, **Video Height (Pixels)**, and **Video Duration (Seconds)**. Their unset zero values are rejected, not usable defaults. Map measured metadata; the file-reading node alone does not extract dimensions or duration. Postdom validates the selected platforms before issuing the signed upload contract. No codec or runtime dependency is added to this node.
+
+The `0.3.0` node requires measured width, height, and duration so Postdom can validate every selected destination before issuing an upload contract.
 
 1. Produce an n8n binary property containing `video/mp4` or `video/quicktime` bytes (for example with Read/Write Files from Disk or an HTTP Request node).
 2. Add **Postdom** with Resource `Media`, Operation `Upload`; name the binary property and choose the intended destination platforms. The node asks Postdom for a workspace-scoped, short-lived PUT contract, then sends the bytes directly to private storage. Video bytes never pass through the Postdom API process.
@@ -152,10 +158,10 @@ Import via **Workflows → Add workflow → Import from file**, then attach your
 You do not need this package installed to use Postdom from n8n. Postdom ships a hosted [Model Context Protocol](https://modelcontextprotocol.io/) endpoint that n8n's built-in **MCP Client Tool** node can call today:
 
 1. In an AI Agent workflow, add the **MCP Client Tool** node.
-2. Set the **Endpoint** to `https://api-web-production-4094.up.railway.app/mcp`.
+2. Set the **Endpoint** to `https://api.postdom.com/mcp`.
 3. Set **Server Transport** to HTTP Streamable.
 4. Set **Authentication** to Bearer and use your `pd_live_` workspace agent key (store it as an n8n credential, never inline).
-5. The agent auto-discovers the tools available from the hosted endpoint. The separately installed npm package remains `@postdom/mcp@0.2.0` until the next release is published and verified.
+5. The agent auto-discovers the tools available from the hosted endpoint. The separately installed npm package is `@postdom/mcp@0.3.0`.
 
 Use the MCP path when an LLM should decide which Postdom capability to call; use this node when you want deterministic, field-by-field control inside a classic n8n workflow.
 

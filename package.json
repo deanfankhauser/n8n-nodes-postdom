@@ -1,21 +1,24 @@
 {
   "name": "n8n-nodes-postdom",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "n8n community node for Postdom — agent-led short-form video publishing, bounded plans, and performance measurement.",
   "keywords": [
     "n8n-community-node-package",
     "postdom",
-    "short-form video",
-    "social media",
+    "social-media",
     "tiktok",
-    "instagram",
-    "youtube"
+    "instagram-reels",
+    "youtube-shorts",
+    "ai-agent",
+    "schedule",
+    "mcp",
+    "short-form-video"
   ],
   "license": "MIT",
   "homepage": "https://postdom.com",
   "author": {
-    "name": "Postdom",
-    "email": "hello@postdom.com",
+    "name": "Blue Venture Studios Pty Ltd",
+    "email": "support@postdom.com",
     "url": "https://postdom.com"
   },
   "repository": {

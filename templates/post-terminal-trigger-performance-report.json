@@ -38,7 +38,7 @@
             {
               "id": "9e8d7c6b-0001-4000-8000-aaaaaaaaaaa1",
               "name": "message",
-              "value": "={{ 'Postdom post ' + $json.post_id + ' reached ' + $('Postdom Trigger').item.json.status + '.\\n' + $('Postdom Trigger').item.json.outcome.guidance + '\\n\\nPerformance summary: ' + $json.summary + '\\nEligibility: ' + $json.eligibility.status + '\\nUnavailable metrics stay null with availability states (available, delayed, estimable, never, unverified); they are never reported as zero.' }}",
+              "value": "={{ 'Postdom post ' + $json.post_id + ' reached ' + $('Postdom Trigger').item.json.status + '.\\n' + $('Postdom Trigger').item.json.postdom_n8n_guidance.guidance + '\\n\\nPerformance summary: ' + $json.summary + '\\nEligibility: ' + $json.eligibility.status + '\\nUnavailable metrics stay null with availability states (available, delayed, estimable, never, unverified); they are never reported as zero.' }}",
               "type": "string"
             }
           ]

@@ -1,0 +1,100 @@
+{
+  "name": "Postdom + OpenAI: generate a caption, publish to TikTok + Reels + Shorts, read outcomes",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-700, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {"assignments": [
+          {"id": "b1000000-0000-4000-8000-000000000011", "name": "video_url", "value": "https://cdn.example.com/videos/approved-short.mp4", "type": "string"},
+          {"id": "b1000000-0000-4000-8000-000000000012", "name": "account_ids", "value": "acc_tiktok_123, acc_instagram_456, acc_youtube_789", "type": "string"},
+          {"id": "b1000000-0000-4000-8000-000000000013", "name": "prompt", "value": "Write one factual caption for this approved short-form video. Do not invent product claims.", "type": "string"}
+        ]},
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Approved Video Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-480, 0]
+    },
+    {
+      "parameters": {"resource": "text", "operation": "message", "prompt": "={{ $json.prompt }}"},
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "Generate Caption with OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.8,
+      "position": [-260, 0]
+    },
+    {
+      "parameters": {
+        "resource": "post",
+        "operation": "publishVideo",
+        "accountIds": "={{ $('Approved Video Input').item.json.account_ids }}",
+        "videoSource": "videoUrl",
+        "videoUrl": "={{ $('Approved Video Input').item.json.video_url }}",
+        "caption": "={{ $json.output || $json.text }}",
+        "intent": "Publish an approved short-form video with an OpenAI-generated caption",
+        "planId": "",
+        "agentIdentity": "OpenAI via n8n",
+        "additionalFields": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Publish with Postdom",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {"amount": 1, "unit": "minutes"},
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Wait for Outcome",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [180, 0],
+      "webhookId": "b1000000-0000-4000-8000-000000000015"
+    },
+    {
+      "parameters": {"resource": "post", "operation": "get", "postId": "={{ $('Publish with Postdom').item.json.id }}"},
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "Read Outcome",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [400, 0]
+    },
+    {
+      "parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "b1000000-0000-4000-8000-000000000016", "leftValue": "={{ $json.postdom_n8n_guidance.terminal }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}], "combinator": "and"}, "options": {}},
+      "id": "b1000000-0000-4000-8000-000000000007",
+      "name": "Terminal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [620, 0]
+    },
+    {
+      "parameters": {"resource": "post", "operation": "getPerformance", "postId": "={{ $json.id }}"},
+      "id": "b1000000-0000-4000-8000-000000000008",
+      "name": "Read Performance",
+      "type": "n8n-nodes-postdom.postdom",
+      "typeVersion": 1,
+      "position": [840, -100]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {"main": [[{"node": "Approved Video Input", "type": "main", "index": 0}]]},
+    "Approved Video Input": {"main": [[{"node": "Generate Caption with OpenAI", "type": "main", "index": 0}]]},
+    "Generate Caption with OpenAI": {"main": [[{"node": "Publish with Postdom", "type": "main", "index": 0}]]},
+    "Publish with Postdom": {"main": [[{"node": "Wait for Outcome", "type": "main", "index": 0}]]},
+    "Wait for Outcome": {"main": [[{"node": "Read Outcome", "type": "main", "index": 0}]]},
+    "Read Outcome": {"main": [[{"node": "Terminal?", "type": "main", "index": 0}]]},
+    "Terminal?": {"main": [[{"node": "Read Performance", "type": "main", "index": 0}], [{"node": "Wait for Outcome", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "meta": {"templateCredsSetupCompleted": false}
+}

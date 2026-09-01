@@ -13,7 +13,8 @@ import {
 	buildGetPost,
 	isTerminalPostStatus,
 	normalizeBaseUrl,
-	publishOutcome,
+	publishGuidance,
+	withN8nGuidance,
 	selectTerminalEmissions,
 	TERMINAL_POST_STATUSES,
 } from '../Postdom/PostdomRequests';
@@ -115,9 +116,10 @@ export class PostdomTrigger implements INodeType {
 
 		const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 		const { emit, nextEmitted } = selectTerminalEmissions(polled, staticData.emitted ?? {});
+		// Do not mark evidence delivered if constructing the output fails.
+		const items = emit.map(({ postId }) => toTriggerItem(snapshots.get(postId)!));
 		staticData.emitted = nextEmitted;
-		if (emit.length === 0) return null;
-		return [emit.map(({ postId }) => toTriggerItem(snapshots.get(postId)!))];
+		return items.length === 0 ? null : [items];
 	}
 }
 
@@ -125,11 +127,10 @@ function toTriggerItem(post: IDataObject): INodeExecutionData {
 	const status = post.status;
 	return {
 		json: {
-			...post,
+			...withN8nGuidance(post, publishGuidance(status)),
 			event: 'postStatus',
 			terminal: isTerminalPostStatus(status),
 			terminal_states: [...TERMINAL_POST_STATUSES],
-			outcome: publishOutcome(status),
 		},
 	};
 }

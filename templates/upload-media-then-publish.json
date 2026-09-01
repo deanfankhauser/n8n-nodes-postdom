@@ -26,11 +26,15 @@
         "operation": "upload",
         "binaryPropertyName": "data",
         "platforms": ["instagram", "tiktok"],
+        "widthPixels": "={{ $json.width_pixels }}",
+        "heightPixels": "={{ $json.height_pixels }}",
+        "durationSeconds": "={{ $json.duration_seconds }}",
         "waitForStorage": true,
         "waitTimeoutSeconds": 120
       },
       "id": "842f5e76-6fe3-48cc-a771-333333333333",
       "name": "Upload Video",
+      "notes": "Before running, map the actual video's positive-integer width_pixels, height_pixels and duration_seconds. Read Video File alone does not measure them. No metadata is guessed and missing values are rejected before signing.",
       "type": "n8n-nodes-postdom.postdom",
       "typeVersion": 1,
       "position": [20, 0]

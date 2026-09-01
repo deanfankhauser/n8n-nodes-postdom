@@ -79,6 +79,11 @@ describe('Postdom node description', () => {
 		const timeout = upload.find((property) => property.name === 'waitTimeoutSeconds');
 		expect(binary?.required).toBe(true);
 		expect(binary?.default).toBe('data');
+		for (const name of ['widthPixels', 'heightPixels', 'durationSeconds']) {
+			const field = upload.find((property) => property.name === name);
+			expect(field).toMatchObject({ required: true, type: 'number', default: 0 });
+			expect(field?.typeOptions).toMatchObject({ minValue: 1, numberPrecision: 0 });
+		}
 		expect(platforms?.type).toBe('multiOptions');
 		expect(wait?.default).toBe(true);
 		expect(timeout?.typeOptions).toMatchObject({ minValue: 1, maxValue: 300 });

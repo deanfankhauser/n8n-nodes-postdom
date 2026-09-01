@@ -1,0 +1,36 @@
+{
+  "name": "Postdom + n8n AI Agent: plan a week, wait for human approval, publish, read results",
+  "nodes": [
+    {"parameters": {}, "id": "b2000000-0000-4000-8000-000000000001", "name": "When clicking 'Execute workflow'", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [-900, 0]},
+    {"parameters": {"assignments": {"assignments": [
+      {"id": "b2000000-0000-4000-8000-000000000011", "name": "brief", "value": "Plan one week of factual product explainers from approved assets.", "type": "string"},
+      {"id": "b2000000-0000-4000-8000-000000000012", "name": "account_ids", "value": "acc_tiktok_123, acc_instagram_456, acc_youtube_789", "type": "string"},
+      {"id": "b2000000-0000-4000-8000-000000000013", "name": "video_url", "value": "https://cdn.example.com/videos/approved-explainer.mp4", "type": "string"}
+    ]}, "options": {}}, "id": "b2000000-0000-4000-8000-000000000002", "name": "Approved Brief", "type": "n8n-nodes-base.set", "typeVersion": 3.4, "position": [-680, 0]},
+    {"parameters": {"promptType": "define", "text": "={{ $json.brief }}", "options": {"systemMessage": "Propose a bounded weekly short-form video plan. Never approve or bypass human review."}}, "id": "b2000000-0000-4000-8000-000000000003", "name": "Plan with AI Agent", "type": "@n8n/n8n-nodes-langchain.agent", "typeVersion": 2.2, "position": [-460, 0]},
+    {"parameters": {"modelName": {"__rl": true, "mode": "list", "value": "gpt-4.1-mini"}, "options": {}}, "id": "b2000000-0000-4000-8000-000000000004", "name": "OpenAI Chat Model", "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi", "typeVersion": 1.2, "position": [-460, 220]},
+    {"parameters": {"resource": "plan", "operation": "submit", "accountIds": "={{ $('Approved Brief').item.json.account_ids }}", "title": "AI-agent weekly content plan", "objective": "={{ $json.output }}", "startsAt": "={{ $now.plus({ days: 1 }).toISO() }}", "endsAt": "={{ $now.plus({ days: 8 }).toISO() }}", "maxPosts": 7, "intent": "Ask a human to approve a bounded AI-agent content plan", "agentIdentity": "n8n AI Agent", "additionalFields": {}}, "id": "b2000000-0000-4000-8000-000000000005", "name": "Submit Plan for Human Approval", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [-240, 0]},
+    {"parameters": {}, "id": "b2000000-0000-4000-8000-000000000006", "name": "Human Approval Remains in Postdom", "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [-20, 0], "notes": "requires_approval is the expected success state. The agent cannot approve its own plan."},
+    {"parameters": {"amount": 5, "unit": "minutes"}, "id": "b2000000-0000-4000-8000-000000000007", "name": "Wait for Human Review", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "position": [200, 0], "webhookId": "b2000000-0000-4000-8000-000000000017"},
+    {"parameters": {"resource": "plan", "operation": "get", "planId": "={{ $('Submit Plan for Human Approval').item.json.id }}"}, "id": "b2000000-0000-4000-8000-000000000008", "name": "Read Plan State", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [420, 0]},
+    {"parameters": {"conditions": {"options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2}, "conditions": [{"id": "b2000000-0000-4000-8000-000000000018", "leftValue": "={{ $json.status }}", "rightValue": "approved", "operator": {"type": "string", "operation": "equals"}}], "combinator": "and"}, "options": {}}, "id": "b2000000-0000-4000-8000-000000000009", "name": "Plan Approved?", "type": "n8n-nodes-base.if", "typeVersion": 2.2, "position": [640, 0]},
+    {"parameters": {"resource": "post", "operation": "publishVideo", "accountIds": "={{ $('Approved Brief').item.json.account_ids }}", "videoSource": "videoUrl", "videoUrl": "={{ $('Approved Brief').item.json.video_url }}", "caption": "={{ $('Plan with AI Agent').item.json.output }}", "intent": "Publish the first approved item under the reviewed weekly plan", "planId": "={{ $('Submit Plan for Human Approval').item.json.id }}", "agentIdentity": "n8n AI Agent", "additionalFields": {}}, "id": "b2000000-0000-4000-8000-000000000010", "name": "Publish Under Approved Plan", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [860, -100]},
+    {"parameters": {"resource": "post", "operation": "getPerformance", "postId": "={{ $json.id }}"}, "id": "b2000000-0000-4000-8000-000000000014", "name": "Read Results for Next Cycle", "type": "n8n-nodes-postdom.postdom", "typeVersion": 1, "position": [1080, -100]},
+    {"parameters": {}, "id": "b2000000-0000-4000-8000-000000000015", "name": "Still Awaiting Human", "type": "n8n-nodes-base.noOp", "typeVersion": 1, "position": [860, 120], "notes": "End safely and run again after the human review state changes."}
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {"main": [[{"node": "Approved Brief", "type": "main", "index": 0}]]},
+    "Approved Brief": {"main": [[{"node": "Plan with AI Agent", "type": "main", "index": 0}]]},
+    "OpenAI Chat Model": {"ai_languageModel": [[{"node": "Plan with AI Agent", "type": "ai_languageModel", "index": 0}]]},
+    "Plan with AI Agent": {"main": [[{"node": "Submit Plan for Human Approval", "type": "main", "index": 0}]]},
+    "Submit Plan for Human Approval": {"main": [[{"node": "Human Approval Remains in Postdom", "type": "main", "index": 0}]]},
+    "Human Approval Remains in Postdom": {"main": [[{"node": "Wait for Human Review", "type": "main", "index": 0}]]},
+    "Wait for Human Review": {"main": [[{"node": "Read Plan State", "type": "main", "index": 0}]]},
+    "Read Plan State": {"main": [[{"node": "Plan Approved?", "type": "main", "index": 0}]]},
+    "Plan Approved?": {"main": [[{"node": "Publish Under Approved Plan", "type": "main", "index": 0}], [{"node": "Still Awaiting Human", "type": "main", "index": 0}]]},
+    "Publish Under Approved Plan": {"main": [[{"node": "Read Results for Next Cycle", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "meta": {"templateCredsSetupCompleted": false}
+}
