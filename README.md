@@ -62,7 +62,7 @@ Agent keys are agent-authority credentials: they can never approve their own wor
 | Media | Get Status | Read whether a media handle is `pending`, `stored`, or `failed`. |
 | Plan | Submit | Submit a time-bounded publication plan (max 14 days, max 20 posts) for one human approval. |
 | Plan | Get | Read plan status and structured reviewer feedback. |
-| Post | Publish Video | Create a private-by-default, AI-disclosed short-form video publish, optionally scheduled in UTC. Plan ID, Intent, and Agent Identity are first-class fields. |
+| Post | Publish Video | Create a short-form video publish with each provider's supported safety defaults, optionally scheduled in UTC. Plan ID, Intent, and Agent Identity are first-class fields. |
 | Post | Get | Read publish state and any approval feedback. |
 | Post | Get Performance | Normalized performance snapshot for one post. |
 | Brief | Get | The workspace-owned brand guidance to read before planning or writing content. |
@@ -86,7 +86,7 @@ Postdom is agent-native: agents propose, humans keep approval authority. The nod
 - **A publish that lands in review is a success, never an error.** Publish Video, Post Get, Plan Submit, and Plan Get responses carry local `postdom_n8n_guidance`: `{ state, terminal, requires_human, guidance }`. A publish with `status: requires_approval` returns `postdom_n8n_guidance.requires_human: true` and guidance pointing at the dashboard approval and the trigger — the workflow keeps running.
 - **Plan-first is a first-class flow.** Submit Plan → one human approval → Publish Video with the Plan ID field set; publishes inside the plan's window and budget flow without per-post review. `postdom_n8n_guidance` on Plan Get tells you exactly when to start publishing.
 - **Server evidence is never guidance.** API `outcome` remains untouched, including measured values, availability state, reason, source, observation timestamps, and nulls. The node never invents `outcome` when the API omits it. If the API ever uses the reserved `postdom_n8n_guidance` namespace, the node fails visibly rather than overwriting data.
-- **Versioned guidance namespace.** The `0.3.0` node and its templates use `postdom_n8n_guidance`; do not pair these templates with the older `0.2.0` field layout.
+- **Versioned guidance namespace.** The `0.4.0` node and its templates use `postdom_n8n_guidance`; do not pair these templates with the older `0.2.0` field layout.
 - **Performance reads are honest.** Metric availability states (`available`, `delayed(2-3d)`, `estimable`, `never`, `unverified`) are passed through per metric with reasons. Unavailable metrics stay `null`; they are never coerced to zero, and failed publishes are reported ineligible instead of measuring nothing quietly.
 
 ## Workflow templates
@@ -128,14 +128,14 @@ Import via **Workflows → Add workflow → Import from file**, then attach your
 
 1. Add **Postdom** with Resource `Post`, Operation `Publish Video`.
 2. Choose exactly one Video Source: a Media Handle returned by Media Upload, or the existing Video URL path for a publicly fetchable file. Set Account IDs, Caption, and Intent. Set the Plan ID field to publish under an approved plan, and Agent Identity to tell the human reviewer who is publishing. Optionally set Publish At (UTC) under Additional Fields.
-3. Every publish is created private-by-default and AI-disclosed on each platform (TikTok `SELF_ONLY`, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure). Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `postdom_n8n_guidance.guidance`, never an error.
+3. Every publish uses the safety controls each provider exposes (TikTok `SELF_ONLY`, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure, and Facebook Reel mode with no Postdom-controlled privacy or AI-disclosure setting). Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `postdom_n8n_guidance.guidance`, never an error.
 4. Read the outcome with Operation `Get` (or the **Postdom Trigger**), then measure with Operation `Get Performance` once the post has been live for a while.
 
 ### Media: upload a private video
 
 Supply the actual video's positive-integer **Video Width (Pixels)**, **Video Height (Pixels)**, and **Video Duration (Seconds)**. Their unset zero values are rejected, not usable defaults. Map measured metadata; the file-reading node alone does not extract dimensions or duration. Postdom validates the selected platforms before issuing the signed upload contract. No codec or runtime dependency is added to this node.
 
-The `0.3.0` node requires measured width, height, and duration so Postdom can validate every selected destination before issuing an upload contract.
+The `0.4.0` node requires measured width, height, and duration so Postdom can validate every selected destination before issuing an upload contract.
 
 1. Produce an n8n binary property containing `video/mp4` or `video/quicktime` bytes (for example with Read/Write Files from Disk or an HTTP Request node).
 2. Add **Postdom** with Resource `Media`, Operation `Upload`; name the binary property and choose the intended destination platforms. The node asks Postdom for a workspace-scoped, short-lived PUT contract, then sends the bytes directly to private storage. Video bytes never pass through the Postdom API process.
@@ -186,4 +186,4 @@ Publishing happens exclusively through GitHub Actions with npm provenance (see [
 
 ## License
 
-[MIT](https://github.com/deanfankhauser/n8n-nodes-postdom/blob/main/LICENSE.md)
+[MIT](https://github.com/deanfankhauser/postdom/blob/main/integrations/n8n/LICENSE.md)

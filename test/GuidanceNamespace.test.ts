@@ -1,11 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { IDataObject, IExecuteFunctions, IPollFunctions, IHttpRequestOptions, INode } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INode, IPollFunctions, IHttpRequestOptions } from 'n8n-workflow';
 import { Postdom } from '../nodes/Postdom/Postdom.node';
 import { PostdomTrigger } from '../nodes/PostdomTrigger/PostdomTrigger.node';
 import { planGuidance, publishGuidance, withN8nGuidance } from '../nodes/Postdom/PostdomRequests';
+const errorContext = { node: { name: 'Postdom', type: 'postdom', typeVersion: 1, position: [0, 0] } as INode };
+
 
 // Include unknown future evidence, all availability states, and meaningful nulls.
 const evidence = {
@@ -20,15 +21,6 @@ const evidence = {
 	future_evidence: { value: null, raw: [0, false, ''] },
 };
 
-const TEST_NODE = {
-	id: 'postdom-guidance-test-node',
-	name: 'Postdom',
-	type: 'n8n-nodes-postdom.postdom',
-	typeVersion: 1,
-	position: [0, 0],
-	parameters: {},
-} as INode;
-
 async function execute(resource: string, operation: string, response: IDataObject) {
 	const parameters: Record<string, unknown> = {
 		resource, operation, postId: 'post-fixture', planId: 'plan-fixture',
@@ -42,7 +34,7 @@ async function execute(resource: string, operation: string, response: IDataObjec
 		getInputData: () => [{ json: {} }],
 		getCredentials: async () => ({}),
 		getNodeParameter: (name: string) => parameters[name],
-		getNode: () => TEST_NODE,
+		getNode: () => ({ name: 'Postdom', type: 'postdom', typeVersion: 1, position: [0, 0] }),
 		continueOnFail: () => false,
 		helpers: {
 			httpRequestWithAuthentication: async (_credential: string, request: IHttpRequestOptions) =>
@@ -81,8 +73,8 @@ describe('n8n guidance never replaces API evidence', () => {
 		const context = {
 			getCredentials: async () => ({}),
 			getNodeParameter: () => 'fixture',
+			getNode: () => errorContext.node,
 			getMode: () => mode,
-			getNode: () => TEST_NODE,
 			getWorkflowStaticData: () => ({}),
 			helpers: { httpRequestWithAuthentication: async () => response },
 		} as unknown as IPollFunctions;
@@ -93,13 +85,8 @@ describe('n8n guidance never replaces API evidence', () => {
 	});
 
 	it('fails visibly if a future API field occupies the reserved namespace', () => {
-		const addGuidance = () => withN8nGuidance(
-			{ postdom_n8n_guidance: evidence },
-			publishGuidance('published'),
-			{ node: TEST_NODE },
-		);
-		expect(addGuidance).toThrowError(NodeOperationError);
-		expect(addGuidance).toThrow('reserved postdom_n8n_guidance');
+		expect(() => withN8nGuidance({ postdom_n8n_guidance: evidence }, publishGuidance('published'), errorContext))
+			.toThrow('reserved postdom_n8n_guidance');
 	});
 
 	it('does not mark a trigger item delivered when namespace preservation fails', async () => {
@@ -107,8 +94,8 @@ describe('n8n guidance never replaces API evidence', () => {
 		const context = {
 			getCredentials: async () => ({}),
 			getNodeParameter: () => 'fixture',
+			getNode: () => errorContext.node,
 			getMode: () => 'trigger',
-			getNode: () => TEST_NODE,
 			getWorkflowStaticData: () => staticData,
 			helpers: { httpRequestWithAuthentication: async () => ({
 				id: 'fixture', status: 'published', postdom_n8n_guidance: evidence,

@@ -33,7 +33,10 @@ import {
 	buildListAccounts,
 	buildPublishVideo,
 	buildSubmitPlan,
+	CONNECT_DESTINATIONS,
+	destinationOptions,
 	MEDIA_CONTENT_TYPES,
+	REDIRECT_DESTINATIONS,
 	normalizeBaseUrl,
 	parseMediaStatus,
 	parseMediaUploadContract,
@@ -222,7 +225,7 @@ export class Postdom implements INodeType {
 						value: 'publishVideo',
 						action: 'Publish a video',
 						description:
-							'Create a private, AI-disclosed short-form video publish, optionally scheduled in UTC. Posts flow automatically inside an account\'s policy or await review on review-mode accounts; landing in review is a success state, never an error.',
+							'Create a short-form video publish with each provider\'s supported safety defaults, optionally scheduled in UTC. Posts flow automatically inside an account\'s policy or await review on review-mode accounts; landing in review is a success state, never an error.',
 					},
 				],
 				default: 'get',
@@ -273,13 +276,15 @@ export class Postdom implements INodeType {
 				type: 'options',
 				required: true,
 				displayOptions: { show: { resource: ['account'], operation: ['connect'] } },
-				options: [
-					{ name: 'Instagram', value: 'instagram' },
-					{ name: 'TikTok', value: 'tiktok' },
-					{ name: 'YouTube', value: 'youtube' },
-				],
+				// REDIRECT_DESTINATIONS, not CONNECT_DESTINATIONS, and the difference is the
+				// whole point of this operation. This returns an OAuth URL; Bluesky authorises
+				// with an app password and has no authorization URL, so offering it here would
+				// ship a control that cannot succeed and surface a supplier-named error the
+				// customer cannot act on. Same narrowing the MCP connect_account tool has.
+				options: destinationOptions(REDIRECT_DESTINATIONS),
 				default: 'tiktok',
-				description: 'Platform to create an OAuth connect URL for',
+				description:
+					'Platform to create an OAuth connect URL for. Destinations that authorise with an app password instead are connected by a human in the Postdom dashboard and are deliberately absent from this list.',
 			},
 
 			// Media fields ---------------------------------------------------
@@ -298,11 +303,13 @@ export class Postdom implements INodeType {
 				type: 'multiOptions',
 				required: true,
 				displayOptions: { show: { resource: ['media'], operation: ['upload'] } },
-				options: [
-					{ name: 'Instagram', value: 'instagram' },
-					{ name: 'TikTok', value: 'tiktok' },
-					{ name: 'YouTube', value: 'youtube' },
-				],
+				// CONNECT_DESTINATIONS, the full offered set, because this asks which
+				// destinations the video will be validated for rather than how an account is
+				// authorised. A customer who connected Bluesky by app password can upload for
+				// it, so narrowing this to the redirect list would withhold a destination they
+				// already have. The two pickers in this node answer different questions and
+				// were previously the same stale four.
+				options: destinationOptions(CONNECT_DESTINATIONS),
 				default: ['tiktok'],
 				description: 'Platforms this video will be validated for before an upload URL is issued',
 			},
@@ -776,11 +783,7 @@ export class Postdom implements INodeType {
 				} else if (resource === 'plan' && operation === 'get') {
 					const request = buildGetPlan(baseUrl, this.getNodeParameter('planId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(
-						response,
-						planGuidance(response.status),
-						{ node: this.getNode(), itemIndex: i },
-					), i));
+					returnData.push(toItem(withN8nGuidance(response, planGuidance(response.status), { node: this.getNode(), itemIndex: i }), i));
 				} else if (resource === 'plan' && operation === 'submit') {
 					const additional = this.getNodeParameter('additionalFields', i) as IDataObject;
 					const request = buildSubmitPlan(
@@ -800,19 +803,11 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(
-						response,
-						planGuidance(response.status),
-						{ node: this.getNode(), itemIndex: i },
-					), i));
+					returnData.push(toItem(withN8nGuidance(response, planGuidance(response.status), { node: this.getNode(), itemIndex: i }), i));
 				} else if (resource === 'post' && operation === 'get') {
 					const request = buildGetPost(baseUrl, this.getNodeParameter('postId', i) as string);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(
-						response,
-						publishGuidance(response.status),
-						{ node: this.getNode(), itemIndex: i },
-					), i));
+					returnData.push(toItem(withN8nGuidance(response, publishGuidance(response.status), { node: this.getNode(), itemIndex: i }), i));
 				} else if (resource === 'post' && operation === 'getPerformance') {
 					const request = buildGetPostPerformance(
 						baseUrl,
@@ -844,11 +839,7 @@ export class Postdom implements INodeType {
 						await listConnectedAccounts(),
 					);
 					const response = await callPostdom(this, request);
-					returnData.push(toItem(withN8nGuidance(
-						response,
-						publishGuidance(response.status),
-						{ node: this.getNode(), itemIndex: i },
-					), i));
+					returnData.push(toItem(withN8nGuidance(response, publishGuidance(response.status), { node: this.getNode(), itemIndex: i }), i));
 				} else {
 					throw new NodeOperationError(
 						this.getNode(),

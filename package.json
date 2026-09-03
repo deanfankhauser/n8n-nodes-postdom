@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-postdom",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "n8n community node for Postdom — agent-led short-form video publishing, bounded plans, and performance measurement.",
   "keywords": [
     "n8n-community-node-package",
@@ -46,8 +46,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-icons.mjs",
     "lint": "eslint credentials nodes test",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "test:submission": "node --test submission/package-verification.test.mjs submission/mirror-drift.test.mjs",
+    "//test": "The exclude pattern MUST stay quoted. npm runs scripts through sh on Linux and in CI; sh has no globstar, so an unquoted submission/** is expanded by the shell before vitest starts - --exclude swallows the first entry and the remaining seven arrive as positional filters, which makes vitest try to run the two node:test suites the flag exists to skip. It fails with \"No test suite found\", nowhere near the cause, and only on Linux: npm uses cmd.exe on Windows, which does not glob, so this stays invisible to local runs. Verified on both shells.",
+    "test": "vitest run --exclude 'submission/**'",
+    "typecheck": "tsc -p tsconfig.json",
+    "mirror:refresh": "node submission/refresh-mirror-manifest.mjs --write",
+    "mirror:check": "node submission/refresh-mirror-manifest.mjs"
   },
   "peerDependencies": {
     "n8n-workflow": "*"

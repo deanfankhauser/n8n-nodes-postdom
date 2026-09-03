@@ -17,7 +17,79 @@ export const DEFAULT_BASE_URL = 'https://api.postdom.com';
 export const SOURCE_HEADER = 'X-Postdom-Source';
 export const SOURCE_VALUE = 'n8n';
 
-export type PostdomPlatform = 'tiktok' | 'instagram' | 'youtube';
+// This package ships standalone and cannot import @postdom/core, so the list is
+// restated here. The cap below is derived from it rather than written out a
+// second time: a hardcoded 5 was correct until LinkedIn landed and would have
+// silently rejected a valid sixth destination.
+export const POSTDOM_PLATFORMS = [
+	'tiktok',
+	'instagram',
+	'youtube',
+	'facebook',
+	'twitter',
+	'linkedin',
+	'bluesky',
+	'snapchat',
+	'threads',
+] as const;
+
+export type PostdomPlatform = (typeof POSTDOM_PLATFORMS)[number];
+
+export const POSTDOM_PLATFORM_COUNT = POSTDOM_PLATFORMS.length;
+
+/** Offered, not accepted. Mirrors `CONNECT_DESTINATIONS` in `@postdom/core`, which this package
+ * cannot import because it ships standalone to n8n.
+ *
+ * `POSTDOM_PLATFORMS` above is the wire contract - what the API will accept. This is what a
+ * customer can actually create an account for. Offering a destination with no Connect path
+ * offers a guaranteed failure: the workflow builds, the platform is picked, and no account can
+ * exist. The union may be wider than the menu; the menu may not be wider than reality.
+ *
+ * Written out once here and derived at both pickers, because it was previously written out
+ * twice in `Postdom.node.ts` and both copies were four destinations stale. */
+export const CONNECT_DESTINATIONS = [
+	'instagram',
+	'tiktok',
+	'youtube',
+	'linkedin',
+	'facebook',
+	'snapchat',
+	'twitter',
+	'threads',
+	'bluesky',
+] as const satisfies readonly PostdomPlatform[];
+
+/** The offered destinations that authorise with a credential rather than a redirect.
+ *
+ * Bluesky uses an app password and has no authorization URL at all, so `connectStart` cannot
+ * carry it. A picker that offers it on a connect-by-redirect operation ships a control that
+ * cannot succeed, and the error a customer sees names our supplier. Mirrors
+ * `CREDENTIAL_DESTINATIONS` in core; see BUILD-25. */
+export const CREDENTIAL_DESTINATIONS = ['bluesky'] as const satisfies readonly PostdomPlatform[];
+
+/** The complement, and the only list a connect-by-redirect picker may offer. */
+export const REDIRECT_DESTINATIONS = CONNECT_DESTINATIONS
+	.filter((destination) => !(CREDENTIAL_DESTINATIONS as readonly string[]).includes(destination));
+
+const DESTINATION_LABELS: Record<PostdomPlatform, string> = {
+	tiktok: 'TikTok',
+	instagram: 'Instagram',
+	youtube: 'YouTube',
+	facebook: 'Facebook',
+	twitter: 'X',
+	linkedin: 'LinkedIn',
+	bluesky: 'Bluesky',
+	snapchat: 'Snapchat',
+	threads: 'Threads',
+};
+
+/** n8n option objects for a destination list, so a picker states which list it offers rather
+ * than restating its members. */
+export function destinationOptions(
+	destinations: readonly PostdomPlatform[],
+): Array<{ name: string; value: PostdomPlatform }> {
+	return destinations.map((destination) => ({ name: DESTINATION_LABELS[destination], value: destination }));
+}
 
 export const MEDIA_CONTENT_TYPES = ['video/mp4', 'video/quicktime'] as const;
 export type MediaContentType = (typeof MEDIA_CONTENT_TYPES)[number];
@@ -150,8 +222,8 @@ export function buildCreateMediaUpload(
 	if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1 || input.sizeBytes > MEDIA_MAX_BYTES) {
 		throw new Error(`Media size must be between 1 and ${MEDIA_MAX_BYTES} bytes`);
 	}
-	if (input.platforms.length < 1 || input.platforms.length > 3) {
-		throw new Error('Choose between one and three target platforms');
+	if (input.platforms.length < 1 || input.platforms.length > POSTDOM_PLATFORM_COUNT) {
+		throw new Error(`Choose between one and ${POSTDOM_PLATFORM_COUNT} target platforms`);
 	}
 	if (new Set(input.platforms).size !== input.platforms.length) {
 		throw new Error('Target platforms must be unique');
@@ -711,7 +783,7 @@ export function planGuidance(status: unknown): PostdomN8nGuidance {
 
 /**
  * Platform target defaults, ported verbatim from PostdomClient.
- * Every publish is private-by-default and AI-disclosed.
+ * Every publish uses the safety defaults supported by its provider.
  */
 export function defaultTarget(
 	platform: string,
@@ -750,6 +822,55 @@ export function defaultTarget(
 				madeForKids: false,
 				containsSyntheticMedia: true,
 			},
+		};
+	}
+	if (platform === 'facebook') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: { contentType: 'reel' },
+		};
+	}
+	if (platform === 'twitter') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: {},
+		};
+	}
+	if (platform === 'linkedin') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: {},
+		};
+	}
+	if (platform === 'bluesky') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: {},
+		};
+	}
+	// Accepted, though not offered: Postdom sends no Threads settings and the wire contract takes
+	// every core platform. The picker is the narrower list.
+	if (platform === 'threads') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: {},
+		};
+	}
+	// Accepted, though not offered: snapchatSettingsSchema is empty and the wire contract takes
+	// every core platform, while the platform picker in Postdom.node.ts is a hardcoded four -
+	// Instagram, LinkedIn, TikTok, YouTube - written out in two places and deriving from no list.
+	// "The picker is the narrower list" stood here and is not true: it is narrower today by
+	// coincidence, not by construction, so nothing keeps it narrower and nothing widens it either.
+	if (platform === 'snapchat') {
+		return {
+			account_id: accountId,
+			platform,
+			settings: {},
 		};
 	}
 	throw new Error(`Publishing to ${platform} is not supported yet`);
