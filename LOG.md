@@ -1,3 +1,11 @@
+2026-10-09 — 0.5.1: scanner fix
+
+- `0.5.0` reached npm with provenance but failed `@n8n/scan-community-package`: one
+  `require-node-api-error` finding, a plain `throw new Error` inside the `catch` in `parseSlides`.
+  The throw now happens after the `catch`, with the same message. No behaviour change; 166/166 tests.
+- `n8n-nodes-postdom@0.5.1` is published from this commit through OIDC trusted publishing. Same
+  scope as 0.5.0 otherwise.
+
 2026-10-09 — slideshows, image upload and publish options; TikTok public by default
 
 - New operations: Slideshow Create and Get, Media Upload Image From URL, and Post Publish Slideshow

@@ -761,11 +761,13 @@ export function buildSimpleSlides(input: SimpleSlidesInput): Array<Record<string
 export function parseSlides(value: unknown): Array<Record<string, unknown>> {
 	let parsed: unknown = value;
 	if (typeof value === 'string') {
+		let readable = true;
 		try {
 			parsed = JSON.parse(value);
 		} catch {
-			throw new Error('Slides (JSON) must be a JSON array of slides');
+			readable = false;
 		}
+		if (!readable) throw new Error('Slides (JSON) must be a JSON array of slides');
 	}
 	if (!Array.isArray(parsed) || parsed.length === 0) {
 		throw new Error('Slides (JSON) must be a non-empty array of slides');
