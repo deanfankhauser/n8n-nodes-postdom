@@ -63,12 +63,13 @@ describe('Postdom node description', () => {
 			['connect', 'getAll', 'getBestPosts', 'getPerformance'].sort(),
 		);
 		expect(operationValues('plan').sort()).toStrictEqual(['get', 'submit'].sort());
-		expect(operationValues('media').sort()).toStrictEqual(['getStatus', 'upload'].sort());
+		expect(operationValues('media').sort()).toStrictEqual(['getStatus', 'upload', 'uploadImageFromUrl'].sort());
 		expect(operationValues('post').sort()).toStrictEqual(
-			['get', 'getPerformance', 'publishVideo'].sort(),
+			['get', 'getPerformance', 'publishSlideshow', 'publishVideo'].sort(),
 		);
 		expect(operationValues('brief')).toStrictEqual(['get']);
 		expect(operationValues('digest')).toStrictEqual(['get']);
+		expect(operationValues('slideshow').sort()).toStrictEqual(['create', 'get'].sort());
 	});
 
 	it('uploads from an n8n binary property and exposes only bounded status controls', () => {

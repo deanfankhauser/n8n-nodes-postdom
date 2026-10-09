@@ -94,6 +94,15 @@ export function destinationOptions(
 export const MEDIA_CONTENT_TYPES = ['video/mp4', 'video/quicktime'] as const;
 export type MediaContentType = (typeof MEDIA_CONTENT_TYPES)[number];
 
+/** Still images an upload may declare: core's `platformLimits.global.image_mime_types`, which are
+ * also exactly the types a slideshow slide takes (apps/api `slideImageRefusal`). */
+export const IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
+export type ImageContentType = (typeof IMAGE_CONTENT_TYPES)[number];
+
+/** Every type a media status read may report: a video or an image upload. */
+export const MEDIA_STATUS_CONTENT_TYPES = [...MEDIA_CONTENT_TYPES, ...IMAGE_CONTENT_TYPES] as const;
+export type MediaStatusContentType = (typeof MEDIA_STATUS_CONTENT_TYPES)[number];
+
 export const MEDIA_UPLOAD_STATUSES = ['pending', 'stored', 'failed'] as const;
 export type MediaUploadStatus = (typeof MEDIA_UPLOAD_STATUSES)[number];
 
@@ -140,7 +149,7 @@ export interface MediaUploadContract {
 export interface MediaStatusResponse {
 	media_handle: string;
 	status: MediaUploadStatus;
-	content_type: MediaContentType;
+	content_type: MediaStatusContentType;
 	size_bytes: number;
 	media_url: string | null;
 	failure_reason: string | null;
@@ -264,7 +273,7 @@ export function buildGetMediaStatus(baseUrl: string, mediaHandle: string): Postd
 
 export function parseMediaUploadContract(
 	value: Record<string, unknown>,
-	expectedContentType: MediaContentType,
+	expectedContentType: MediaStatusContentType,
 	expectedSizeBytes: number,
 	now = Date.now(),
 ): MediaUploadContract {
@@ -325,7 +334,7 @@ export function parseMediaStatus(value: Record<string, unknown>): MediaStatusRes
 		typeof value.media_handle !== 'string' ||
 		!MEDIA_HANDLE_PATTERN.test(value.media_handle) ||
 		!MEDIA_UPLOAD_STATUSES.includes(value.status as MediaUploadStatus) ||
-		!MEDIA_CONTENT_TYPES.includes(value.content_type as MediaContentType) ||
+		!MEDIA_STATUS_CONTENT_TYPES.includes(value.content_type as MediaStatusContentType) ||
 		typeof value.size_bytes !== 'number' ||
 		!Number.isInteger(value.size_bytes) ||
 		value.size_bytes < 1 ||
@@ -363,6 +372,39 @@ export async function waitForMediaStorage(
 		delayMs = Math.min(delayMs * 2, maxDelayMs);
 	}
 	return status;
+}
+
+export interface WaitForSlideshowOptions {
+	timeoutMs: number;
+	initialDelayMs?: number;
+	maxDelayMs?: number;
+	now?: () => number;
+	sleep?: (milliseconds: number) => Promise<void>;
+}
+
+/**
+ * Polls a slideshow until it leaves `rendering` or the timeout passes, with the same bounded
+ * backoff media storage uses. A timeout returns the rendering read honestly; nothing is invented.
+ */
+export async function waitForSlideshow(
+	readSlideshow: () => Promise<Record<string, unknown>>,
+	first: Record<string, unknown>,
+	options: WaitForSlideshowOptions,
+): Promise<Record<string, unknown>> {
+	const now = options.now ?? Date.now;
+	const sleep = options.sleep ?? n8nSleep;
+	const startedAt = now();
+	let delayMs = options.initialDelayMs ?? 2_000;
+	const maxDelayMs = options.maxDelayMs ?? 10_000;
+	let slideshow = first;
+	while (slideshow.status === 'rendering') {
+		const remainingMs = options.timeoutMs - (now() - startedAt);
+		if (remainingMs <= 0) return slideshow;
+		await sleep(Math.min(delayMs, remainingMs));
+		slideshow = await readSlideshow();
+		delayMs = Math.min(delayMs * 2, maxDelayMs);
+	}
+	return slideshow;
 }
 
 export function buildListAccounts(baseUrl: string): PostdomRequest {
@@ -466,7 +508,33 @@ export function buildSubmitPlan(
 	};
 }
 
-export interface PublishVideoInput {
+/**
+ * The per-destination choices a publish may make, shared by Publish Video and Publish Slideshow.
+ * Every one is optional, and an omitted one sends exactly what 0.5.0 sent before it existed, so a
+ * workflow that sets none of them builds the same request.
+ */
+export interface TargetOptions {
+	/** BUILD-482. TikTok audience; absent means PUBLIC_TO_EVERYONE (SELF_ONLY before 0.5.0). */
+	tiktokPrivacy?: string;
+	/** TikTok `allow_comment`, the only comment control on the wire; absent means off. */
+	allowComments?: boolean;
+	/** The platform AI label (TikTok, Instagram, YouTube); absent means on (Dean, 5 Oct 2026). */
+	aiLabel?: boolean;
+	/** BUILD-447. TikTok's commercial content disclosure; absent sends none. */
+	tiktokCommercialContent?: string;
+	/** Photo posts only: TikTok adds one of its recommended tracks. Absent sends none. */
+	tiktokAutoAddMusic?: boolean;
+	/** YouTube visibility; absent means private, the documented agent default. */
+	youtubeVisibility?: string;
+	/** YouTube title; absent means the caption's first line. */
+	youtubeTitle?: string;
+	/** BUILD-528. LinkedIn document (carousel) title. */
+	linkedinDocumentTitle?: string;
+	/** BUILD-322. Where the post lands, for a destination with more than one place. */
+	surface?: string;
+}
+
+export interface PublishVideoInput extends TargetOptions {
 	accountIds: string[];
 	videoUrl?: string;
 	mediaHandle?: string;
@@ -476,6 +544,37 @@ export interface PublishVideoInput {
 	publishAt?: string;
 	planId?: string;
 	idempotencyKey?: string;
+}
+
+/** BUILD-482. TikTok's four audiences, as the REST target schema names them. */
+export const TIKTOK_PRIVACY_LEVELS = [
+	'PUBLIC_TO_EVERYONE',
+	'MUTUAL_FOLLOW_FRIENDS',
+	'FOLLOWER_OF_CREATOR',
+	'SELF_ONLY',
+] as const;
+
+/** BUILD-447. TikTok's commercial content disclosure, as `tiktokSettingsSchema` names it. */
+export const TIKTOK_COMMERCIAL_CONTENT_TYPES = ['none', 'brand_organic', 'brand_content'] as const;
+
+/** `youtubeSettingsSchema.visibility`. */
+export const YOUTUBE_VISIBILITIES = ['public', 'private', 'unlisted'] as const;
+
+/** core `LINKEDIN_DOCUMENT_TITLE_MAX`. */
+export const LINKEDIN_DOCUMENT_TITLE_MAX = 200;
+
+/** core `platformLimits.youtube.title_max_chars`. */
+export const YOUTUBE_TITLE_MAX = 100;
+
+function videoTargetOptions(input: PublishVideoInput): TargetOptions {
+	return {
+		tiktokPrivacy: input.tiktokPrivacy,
+		allowComments: input.allowComments,
+		aiLabel: input.aiLabel,
+		tiktokCommercialContent: input.tiktokCommercialContent,
+		youtubeVisibility: input.youtubeVisibility,
+		youtubeTitle: input.youtubeTitle,
+	};
 }
 
 export function buildPublishVideo(
@@ -496,7 +595,7 @@ export function buildPublishVideo(
 	const targets = input.accountIds.map((accountId) => {
 		const account = byId.get(accountId);
 		if (!account) throw new Error(`Postdom account ${accountId} is not connected`);
-		return defaultTarget(account.platform, accountId, input.caption);
+		return defaultTarget(account.platform, accountId, input.caption, videoTargetOptions(input));
 	});
 	const body: Record<string, unknown> = {
 		caption: input.caption,
@@ -513,6 +612,409 @@ export function buildPublishVideo(
 	return {
 		method: 'POST',
 		url: `${baseUrl}/v1/posts`,
+		headers: writeHeaders(input.idempotencyKey),
+		body,
+		json: true,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Slideshows (BUILD-371): POST /v1/slideshows, GET /v1/slideshows/{id}, and the
+// multi-image post that publishes one.
+// ---------------------------------------------------------------------------
+
+/**
+ * Destinations whose provider code posts several images as one carousel. Mirrors core
+ * `CAROUSEL_VERIFIED_DESTINATIONS`, which this package cannot import. LinkedIn's carousel is a
+ * document post (BUILD-528). YouTube takes no images at all.
+ */
+export const SLIDESHOW_DESTINATIONS = ['tiktok', 'instagram', 'facebook', 'linkedin'] as const satisfies readonly PostdomPlatform[];
+
+/** core `destinationImageLimits[platform].image_max_items` for the slideshow destinations. */
+export const SLIDESHOW_IMAGE_MAX: Record<(typeof SLIDESHOW_DESTINATIONS)[number], number> = {
+	tiktok: 35,
+	instagram: 10,
+	facebook: 10,
+	linkedin: 20,
+};
+
+/** core `SLIDESHOW_SIZES`. 3:4 is TikTok's photo-post frame; 4:5 suits Instagram and LinkedIn. */
+export const SLIDESHOW_SIZES = ['4:5', '3:4', '9:16', '1:1'] as const;
+export type SlideshowSize = (typeof SLIDESHOW_SIZES)[number];
+
+/** core `SLIDESHOW_TEMPLATES`. */
+export const SLIDESHOW_TEMPLATES = [
+	'cover',
+	'text_image',
+	'list',
+	'quote',
+	'end_card',
+	'stat',
+	'compare',
+	'checklist',
+	'myth_fact',
+	'step',
+	'cover_image',
+] as const;
+
+/** core `SLIDESHOW_MAX_SLIDES`. */
+export const SLIDESHOW_MAX_SLIDES = 20;
+
+/**
+ * core `SLIDESHOW_FIELD_LIMITS`: the most characters each field holds so the copy fits at every
+ * size. The simple slide builder below clips to these; the API answers anything longer with a
+ * structured refusal naming the slide and field.
+ */
+export const SLIDESHOW_FIELD_LIMITS = {
+	cover: { headline: 80, kicker: 32 },
+	cover_image: { headline: 90, kicker: 32, body: 70 },
+	list: { items: 44, title: 48 },
+	step: { headline: 60, body: 180 },
+	end_card: { cta: 60, handle: 28 },
+} as const;
+
+const SLIDESHOW_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Plain text, one line, cut at a word to `max` characters with an ellipsis. */
+export function clipSlideText(value: unknown, max: number): string {
+	const text = String(value ?? '')
+		.replace(/<[^>]*>/g, ' ')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (text.length <= max) return text;
+	const cut = text.slice(0, max - 1);
+	const space = cut.lastIndexOf(' ');
+	return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,.;:-]+$/, '')}…`;
+}
+
+export interface SimpleSlidesInput {
+	title: string;
+	kicker?: string;
+	coverImageHandle?: string;
+	/** One point per line (or an array), up to five. */
+	points?: string | string[];
+	pointsStyle?: 'list' | 'steps';
+	pointsTitle?: string;
+	cta?: string;
+	handle?: string;
+}
+
+/**
+ * Slides from plain fields: a cover (with a photo when one is given), the points as one list
+ * slide or one slide per step, and an end card. Same shape as the Zapier and Make actions build.
+ */
+export function buildSimpleSlides(input: SimpleSlidesInput): Array<Record<string, unknown>> {
+	const title = input.title?.trim();
+	if (!title) throw new Error('Title is required unless the slides are given as JSON');
+	const L = SLIDESHOW_FIELD_LIMITS;
+	const kicker = input.kicker?.trim();
+	const cover = input.coverImageHandle?.trim();
+	if (cover) assertMediaHandle(cover);
+	const slides: Array<Record<string, unknown>> = [
+		cover
+			? {
+					template: 'cover_image',
+					headline: clipSlideText(title, L.cover_image.headline),
+					image_media_id: cover,
+					...(kicker ? { kicker: clipSlideText(kicker, L.cover_image.kicker) } : {}),
+				}
+			: {
+					template: 'cover',
+					headline: clipSlideText(title, L.cover.headline),
+					...(kicker ? { kicker: clipSlideText(kicker, L.cover.kicker) } : {}),
+				},
+	];
+	const points = (Array.isArray(input.points) ? input.points : String(input.points ?? '').split(/\n+/))
+		.map((point) => String(point).replace(/^[-*•\d.)\s]+/, '').trim())
+		.filter(Boolean)
+		.slice(0, 5);
+	if (input.pointsStyle === 'steps') {
+		points.slice(0, 4).forEach((point, index) => {
+			const [head, ...rest] = point.split(/(?<=[.!?:])\s+/);
+			slides.push({
+				template: 'step',
+				step: index + 1,
+				headline: clipSlideText(head, L.step.headline),
+				...(rest.length ? { body: clipSlideText(rest.join(' '), L.step.body) } : {}),
+			});
+		});
+	} else if (points.length > 0) {
+		const listTitle = input.pointsTitle?.trim();
+		slides.push({
+			template: 'list',
+			...(listTitle ? { title: clipSlideText(listTitle, L.list.title) } : {}),
+			items: points.map((point) => clipSlideText(point, L.list.items)),
+		});
+	}
+	const handle = input.handle?.trim();
+	slides.push({
+		template: 'end_card',
+		cta: clipSlideText(input.cta?.trim() || 'Follow for more', L.end_card.cta),
+		...(handle ? { handle: clipSlideText(handle, L.end_card.handle) } : {}),
+	});
+	return slides;
+}
+
+/** Slides given as JSON text or an array (for example `{{ $json.slides }}` from a Code node). */
+export function parseSlides(value: unknown): Array<Record<string, unknown>> {
+	let parsed: unknown = value;
+	if (typeof value === 'string') {
+		try {
+			parsed = JSON.parse(value);
+		} catch {
+			throw new Error('Slides (JSON) must be a JSON array of slides');
+		}
+	}
+	if (!Array.isArray(parsed) || parsed.length === 0) {
+		throw new Error('Slides (JSON) must be a non-empty array of slides');
+	}
+	if (parsed.length > SLIDESHOW_MAX_SLIDES) {
+		throw new Error(`A slideshow takes at most ${SLIDESHOW_MAX_SLIDES} slides`);
+	}
+	parsed.forEach((slide, index) => {
+		if (typeof slide !== 'object' || slide === null || Array.isArray(slide)) {
+			throw new Error(`Slide ${index + 1} must be an object`);
+		}
+		const template = (slide as Record<string, unknown>).template;
+		const bare = typeof template === 'string' ? template.replace(/@[0-9]{1,4}$/, '') : '';
+		if (!(SLIDESHOW_TEMPLATES as readonly string[]).includes(bare)) {
+			throw new Error(`Slide ${index + 1} template must be one of ${SLIDESHOW_TEMPLATES.join(', ')}`);
+		}
+	});
+	return parsed as Array<Record<string, unknown>>;
+}
+
+export interface CreateSlideshowInput {
+	size: string;
+	slides: Array<Record<string, unknown>>;
+	design?: string;
+	idempotencyKey?: string;
+	/** Seconds the API may hold the request open while it renders (RFC 7240 `Prefer: wait`). */
+	waitSeconds?: number;
+}
+
+/** The longest a create waits server-side; the API caps it at 25 s (`SLIDESHOW_WAIT_MS`). */
+export const SLIDESHOW_PREFER_WAIT_SECONDS = 25;
+
+export function buildCreateSlideshow(baseUrl: string, input: CreateSlideshowInput): PostdomRequest {
+	if (!(SLIDESHOW_SIZES as readonly string[]).includes(input.size)) {
+		throw new Error(`Slide Size must be one of ${SLIDESHOW_SIZES.join(', ')}`);
+	}
+	const slides = parseSlides(input.slides);
+	const body: Record<string, unknown> = { size: input.size, slides };
+	const design = input.design?.trim();
+	if (design) body.design = design;
+	const wait = Math.max(1, Math.min(SLIDESHOW_PREFER_WAIT_SECONDS, Math.round(input.waitSeconds ?? SLIDESHOW_PREFER_WAIT_SECONDS)));
+	return {
+		method: 'POST',
+		url: `${baseUrl}/v1/slideshows`,
+		headers: { ...writeHeaders(input.idempotencyKey), Prefer: `wait=${wait}` },
+		body,
+		json: true,
+	};
+}
+
+export function buildGetSlideshow(baseUrl: string, slideshowId: string): PostdomRequest {
+	const id = slideshowId.trim();
+	if (!SLIDESHOW_ID_PATTERN.test(id)) throw new Error('Slideshow ID must be the UUID returned by Create Slideshow');
+	return get(baseUrl, `/v1/slideshows/${encodeURIComponent(id)}`);
+}
+
+export const SLIDESHOW_STATUSES = ['rendering', 'ready', 'refused', 'failed'] as const;
+
+/**
+ * A slideshow read with its slides' media handles in carousel order, ready to map into
+ * Publish Slideshow. Everything the API returned is kept.
+ */
+export function withSlideshowHandles(response: Record<string, unknown>): Record<string, unknown> {
+	const media = Array.isArray(response.media) ? (response.media as Array<Record<string, unknown>>) : [];
+	const ordered = [...media].sort((a, b) => Number(a.position) - Number(b.position));
+	return {
+		...response,
+		media_handles: ordered.map((item) => item.media_id).filter((id): id is string => typeof id === 'string'),
+		slide_count: ordered.length,
+	};
+}
+
+/** One readable sentence from the API's `slides_do_not_fit` refusals. */
+export function slideshowRefusalMessage(problem: Record<string, unknown>): string {
+	const refusals = Array.isArray(problem.refusals) ? (problem.refusals as Array<Record<string, unknown>>) : [];
+	if (refusals.length === 0) return String(problem.detail ?? 'The slides could not be rendered');
+	return `Some slide text does not fit: ${refusals
+		.map((refusal) => `slide ${refusal.slide ?? '?'} ${refusal.field}: ${refusal.reason}`)
+		.join('; ')}`;
+}
+
+export interface PublishSlideshowInput {
+	accountIds: string[];
+	mediaHandles: string[];
+	caption: string;
+	intent: string;
+	agentIdentity?: string;
+	publishAt?: string;
+	planId?: string;
+	idempotencyKey?: string;
+	tiktokPrivacy?: string;
+	allowComments?: boolean;
+	aiLabel?: boolean;
+	tiktokCommercialContent?: string;
+	/** Absent means on: a photo post with TikTok's own recommended music, as the app posts one. */
+	tiktokAutoAddMusic?: boolean;
+	/** Absent means the caption's first line. */
+	linkedinDocumentTitle?: string;
+}
+
+/** Media handles as a list, from an array or comma/newline separated text. */
+export function splitMediaHandles(value: unknown): string[] {
+	const raw = Array.isArray(value) ? value.map(String) : String(value ?? '').split(/[\s,]+/);
+	return raw.map((handle) => handle.trim()).filter((handle) => handle !== '');
+}
+
+/**
+ * A multi-image post (POST /v1/posts with `media[]`) from a rendered slideshow, to the carousel
+ * destinations only. Targets match the app's own slideshow publish (apps/api `draftTargets`):
+ * Instagram and Facebook to the feed, TikTok as a photo post with TikTok's recommended music, and
+ * LinkedIn as a document post with a title.
+ */
+export function buildPublishSlideshow(
+	baseUrl: string,
+	input: PublishSlideshowInput,
+	accounts: PostdomAccount[],
+): PostdomRequest {
+	const handles = input.mediaHandles;
+	if (handles.length === 0) throw new Error('Media Handles is empty. Map media_handles from Create Slideshow.');
+	for (const handle of handles) assertMediaHandle(handle);
+	const byId = new Map(accounts.map((account) => [account.providerAccountId, account]));
+	const linkedinTitle = input.linkedinDocumentTitle?.trim() || input.caption.split('\n')[0] || '';
+	const targets = input.accountIds.map((accountId) => {
+		const account = byId.get(accountId);
+		if (!account) throw new Error(`Postdom account ${accountId} is not connected`);
+		const platform = account.platform as (typeof SLIDESHOW_DESTINATIONS)[number];
+		if (!(SLIDESHOW_DESTINATIONS as readonly string[]).includes(platform)) {
+			throw new Error(
+				`Slideshows post to TikTok, Instagram, Facebook and LinkedIn; account ${accountId} is ${account.platform}`,
+			);
+		}
+		if (handles.length > SLIDESHOW_IMAGE_MAX[platform]) {
+			throw new Error(
+				`${DESTINATION_LABELS[platform]} takes at most ${SLIDESHOW_IMAGE_MAX[platform]} images in one post; this slideshow has ${handles.length}`,
+			);
+		}
+		return defaultTarget(platform, accountId, input.caption, {
+			tiktokPrivacy: input.tiktokPrivacy,
+			allowComments: input.allowComments,
+			aiLabel: input.aiLabel,
+			tiktokCommercialContent: input.tiktokCommercialContent,
+			tiktokAutoAddMusic: platform === 'tiktok' ? (input.tiktokAutoAddMusic ?? true) : undefined,
+			// A single image goes as LinkedIn's own image post: no document, no title (BUILD-538).
+			linkedinDocumentTitle: platform === 'linkedin' && handles.length > 1 ? linkedinTitle : undefined,
+			surface: platform === 'instagram' || platform === 'facebook' ? 'feed' : undefined,
+		});
+	});
+	const body: Record<string, unknown> = {
+		caption: input.caption,
+		media: handles.map((handle) => ({ media_handle: handle })),
+		targets,
+		agent_context: {
+			identity: agentIdentity(input.agentIdentity),
+			intent: input.intent,
+		},
+	};
+	if (input.publishAt !== undefined) body.publish_at = input.publishAt;
+	if (input.planId !== undefined) body.plan_id = input.planId;
+	return {
+		method: 'POST',
+		url: `${baseUrl}/v1/posts`,
+		headers: writeHeaders(input.idempotencyKey),
+		body,
+		json: true,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Images (BUILD-314): an image upload declares its type, bytes and pixel size, and no duration.
+// ---------------------------------------------------------------------------
+
+export interface ImageInfo {
+	contentType: ImageContentType;
+	width: number;
+	height: number;
+}
+
+/** The real type and pixel size of a PNG, JPEG, GIF or WebP, read from its bytes; null otherwise. */
+export function readImageInfo(bytes: Buffer): ImageInfo | null {
+	if (bytes.length >= 24 && bytes[0] === 0x89 && bytes.toString('latin1', 1, 4) === 'PNG') {
+		return { contentType: 'image/png', width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+	}
+	if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+		let p = 2;
+		while (p + 9 < bytes.length) {
+			if (bytes[p] !== 0xff) {
+				p += 1;
+				continue;
+			}
+			const marker = bytes.readUInt8(p + 1);
+			if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+				return { contentType: 'image/jpeg', height: bytes.readUInt16BE(p + 5), width: bytes.readUInt16BE(p + 7) };
+			}
+			p += 2 + bytes.readUInt16BE(p + 2);
+		}
+		return null;
+	}
+	if (bytes.length >= 10 && bytes.toString('latin1', 0, 4) === 'GIF8') {
+		return { contentType: 'image/gif', width: bytes.readUInt16LE(6), height: bytes.readUInt16LE(8) };
+	}
+	if (bytes.length >= 30 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') {
+		const chunk = bytes.toString('latin1', 12, 16);
+		if (chunk === 'VP8X') {
+			return { contentType: 'image/webp', width: 1 + bytes.readUIntLE(24, 3), height: 1 + bytes.readUIntLE(27, 3) };
+		}
+		if (chunk === 'VP8L' && bytes[20] === 0x2f) {
+			const bits = bytes.readUInt32LE(21);
+			return { contentType: 'image/webp', width: 1 + (bits & 0x3fff), height: 1 + ((bits >> 14) & 0x3fff) };
+		}
+		if (chunk === 'VP8 ' && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+			return { contentType: 'image/webp', width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff };
+		}
+	}
+	return null;
+}
+
+export interface CreateImageUploadInput {
+	contentType: ImageContentType;
+	sizeBytes: number;
+	widthPixels: number;
+	heightPixels: number;
+	/** Optional: omitted, the image is checked against the global limits only (BUILD-290). */
+	platforms?: PostdomPlatform[];
+	idempotencyKey?: string;
+}
+
+export function buildCreateImageUpload(baseUrl: string, input: CreateImageUploadInput): PostdomRequest {
+	if (!(IMAGE_CONTENT_TYPES as readonly string[]).includes(input.contentType)) {
+		throw new Error(`Images must be ${IMAGE_CONTENT_TYPES.join(', ')}`);
+	}
+	if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1 || input.sizeBytes > MEDIA_MAX_BYTES) {
+		throw new Error(`Media size must be between 1 and ${MEDIA_MAX_BYTES} bytes`);
+	}
+	for (const [label, value] of Object.entries({ width: input.widthPixels, height: input.heightPixels })) {
+		if (!Number.isSafeInteger(value) || value < 1) throw new Error(`Image ${label} could not be read from the file`);
+	}
+	const body: Record<string, unknown> = {
+		content_type: input.contentType,
+		size_bytes: input.sizeBytes,
+		width_pixels: input.widthPixels,
+		height_pixels: input.heightPixels,
+	};
+	if (input.platforms && input.platforms.length > 0) {
+		if (new Set(input.platforms).size !== input.platforms.length) throw new Error('Target platforms must be unique');
+		body.platforms = input.platforms;
+	}
+	return {
+		method: 'POST',
+		url: `${baseUrl}/v1/media/uploads`,
 		headers: writeHeaders(input.idempotencyKey),
 		body,
 		json: true,
@@ -782,96 +1284,115 @@ export function planGuidance(status: unknown): PostdomN8nGuidance {
 }
 
 /**
- * Platform target defaults, ported verbatim from PostdomClient.
- * Every publish uses the safety defaults supported by its provider.
+ * Platform target defaults, ported from PostdomClient, with the per-destination choices in
+ * `TargetOptions`. Every publish uses the safety defaults supported by its provider; an option
+ * left out sends exactly the default PostdomClient sends.
+ *
+ * The fourth argument was the TikTok privacy string alone until the options existed, and a string
+ * is still read as that.
  */
 export function defaultTarget(
 	platform: string,
 	accountId: string,
 	caption: string,
+	options: string | TargetOptions = {},
 ): Record<string, unknown> {
+	const choices: TargetOptions = typeof options === 'string' ? { tiktokPrivacy: options } : options;
+	const aiLabel = choices.aiLabel ?? true;
+	const surface = choices.surface ? { surface: choices.surface } : {};
 	if (platform === 'tiktok') {
-		return {
-			account_id: accountId,
-			platform,
-			settings: {
-				privacy_level: 'SELF_ONLY',
-				allow_comment: false,
-				allow_duet: false,
-				allow_stitch: false,
-				content_preview_confirmed: true,
-				express_consent_given: true,
-				video_made_with_ai: true,
-			},
+		const privacy = choices.tiktokPrivacy;
+		if (privacy !== undefined && !(TIKTOK_PRIVACY_LEVELS as readonly string[]).includes(privacy)) {
+			throw new Error(`TikTok Privacy must be one of ${TIKTOK_PRIVACY_LEVELS.join(', ')}`);
+		}
+		const commercial = choices.tiktokCommercialContent;
+		if (commercial !== undefined && !(TIKTOK_COMMERCIAL_CONTENT_TYPES as readonly string[]).includes(commercial)) {
+			throw new Error(`TikTok Commercial Content must be one of ${TIKTOK_COMMERCIAL_CONTENT_TYPES.join(', ')}`);
+		}
+		// core `tiktokBrandedContentIsPrivate`: TikTok refuses branded content only the creator can see.
+		if (commercial === 'brand_content' && privacy === 'SELF_ONLY') {
+			throw new Error('TikTok does not allow branded content to be posted as Only Me; choose another TikTok Privacy');
+		}
+		const settings: Record<string, unknown> = {
+			privacy_level: privacy ?? 'PUBLIC_TO_EVERYONE',
+			allow_comment: choices.allowComments ?? false,
+			allow_duet: false,
+			allow_stitch: false,
+			content_preview_confirmed: true,
+			express_consent_given: true,
+			video_made_with_ai: aiLabel,
 		};
+		if (commercial !== undefined) settings.commercialContentType = commercial;
+		if (choices.tiktokAutoAddMusic !== undefined) settings.auto_add_music = choices.tiktokAutoAddMusic;
+		return { account_id: accountId, platform, ...surface, settings };
 	}
 	if (platform === 'instagram') {
 		return {
 			account_id: accountId,
 			platform,
-			settings: { contentType: 'reel', isAiGenerated: true },
+			...surface,
+			settings: { contentType: 'reel', isAiGenerated: aiLabel },
 		};
 	}
 	if (platform === 'youtube') {
+		const visibility = choices.youtubeVisibility;
+		if (visibility !== undefined && !(YOUTUBE_VISIBILITIES as readonly string[]).includes(visibility)) {
+			throw new Error(`YouTube Visibility must be one of ${YOUTUBE_VISIBILITIES.join(', ')}`);
+		}
+		const named = choices.youtubeTitle?.trim();
 		return {
 			account_id: accountId,
 			platform,
+			...surface,
 			settings: {
-				title: caption.split('\n')[0]?.slice(0, 100) || 'Postdom video',
-				visibility: 'private',
+				title: named
+					? named.slice(0, YOUTUBE_TITLE_MAX)
+					: caption.split('\n')[0]?.slice(0, YOUTUBE_TITLE_MAX) || 'Postdom video',
+				visibility: visibility ?? 'private',
 				madeForKids: false,
-				containsSyntheticMedia: true,
+				containsSyntheticMedia: aiLabel,
 			},
 		};
 	}
 	if (platform === 'facebook') {
+		// Facebook exposes no AI-generated flag (core BUILD-432 audit), so the AI label has nothing to set.
 		return {
 			account_id: accountId,
 			platform,
+			...surface,
 			settings: { contentType: 'reel' },
 		};
 	}
-	if (platform === 'twitter') {
-		return {
-			account_id: accountId,
-			platform,
-			settings: {},
-		};
-	}
 	if (platform === 'linkedin') {
+		const title =
+			choices.linkedinDocumentTitle === undefined ? undefined : linkedinDocumentTitle(choices.linkedinDocumentTitle);
 		return {
 			account_id: accountId,
 			platform,
-			settings: {},
+			...surface,
+			settings: title ? { documentTitle: title } : {},
 		};
 	}
-	if (platform === 'bluesky') {
-		return {
-			account_id: accountId,
-			platform,
-			settings: {},
-		};
+	if (platform === 'twitter' || platform === 'bluesky') {
+		return { account_id: accountId, platform, ...surface, settings: {} };
 	}
 	// Accepted, though not offered: Postdom sends no Threads settings and the wire contract takes
 	// every core platform. The picker is the narrower list.
 	if (platform === 'threads') {
-		return {
-			account_id: accountId,
-			platform,
-			settings: {},
-		};
+		return { account_id: accountId, platform, ...surface, settings: {} };
 	}
 	// Accepted, though not offered: snapchatSettingsSchema is empty and the wire contract takes
-	// every core platform, while the platform picker in Postdom.node.ts is a hardcoded four -
-	// Instagram, LinkedIn, TikTok, YouTube - written out in two places and deriving from no list.
-	// "The picker is the narrower list" stood here and is not true: it is narrower today by
-	// coincidence, not by construction, so nothing keeps it narrower and nothing widens it either.
+	// every core platform.
 	if (platform === 'snapchat') {
-		return {
-			account_id: accountId,
-			platform,
-			settings: {},
-		};
+		return { account_id: accountId, platform, ...surface, settings: {} };
 	}
 	throw new Error(`Publishing to ${platform} is not supported yet`);
+}
+
+/** core `linkedinDocumentTitle`: one line, within Postdom's ceiling, or undefined when blank. */
+export function linkedinDocumentTitle(value: string): string | undefined {
+	const line = value.replace(/\s+/g, ' ').trim();
+	if (!line) return undefined;
+	if (line.length <= LINKEDIN_DOCUMENT_TITLE_MAX) return line;
+	return `${line.slice(0, LINKEDIN_DOCUMENT_TITLE_MAX - 1).trimEnd()}…`;
 }

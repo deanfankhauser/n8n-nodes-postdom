@@ -21,6 +21,7 @@ import {
 	buildListAccounts,
 	buildPublishVideo,
 	buildSubmitPlan,
+	defaultTarget,
 	DEFAULT_BASE_URL,
 	isTerminalPostStatus,
 	normalizeBaseUrl,
@@ -370,6 +371,18 @@ describe('buildSubmitPlan', () => {
 	});
 });
 
+describe('TikTok privacy (BUILD-482)', () => {
+	it('defaults to PUBLIC_TO_EVERYONE and sends an explicit Only me or Friends as chosen', () => {
+		const level = (choice?: string) =>
+			(defaultTarget('tiktok', 'acc_tt', 'Caption', choice).settings as { privacy_level: string }).privacy_level;
+		expect(level()).toBe('PUBLIC_TO_EVERYONE');
+		expect(level('SELF_ONLY')).toBe('SELF_ONLY');
+		expect(level('SELF_ONLY')).not.toBe('PUBLIC_TO_EVERYONE');
+		expect(level('MUTUAL_FOLLOW_FRIENDS')).toBe('MUTUAL_FOLLOW_FRIENDS');
+		expect(() => level('EVERYONE')).toThrow('TikTok Privacy must be one of');
+	});
+});
+
 describe('buildPublishVideo', () => {
 	it('builds POST /v1/posts mirroring PostdomClient.publishVideo, including platform target defaults', () => {
 		const request = buildPublishVideo(
@@ -399,7 +412,7 @@ describe('buildPublishVideo', () => {
 						account_id: 'acc_tt',
 						platform: 'tiktok',
 						settings: {
-							privacy_level: 'SELF_ONLY',
+							privacy_level: 'PUBLIC_TO_EVERYONE',
 							allow_comment: false,
 							allow_duet: false,
 							allow_stitch: false,

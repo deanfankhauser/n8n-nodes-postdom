@@ -35,7 +35,7 @@ Where the key comes from:
 
 1. A human signs up or logs in at [app.postdom.com](https://app.postdom.com).
 2. In the dashboard, open **Accounts** and find the **Agent keys** section.
-3. Create a key with the scopes you need: `read` for all Get and List operations, plus `write` for Connect, Media Upload, Submit Plan, and Publish Video.
+3. Create a key with the scopes you need: `read` for all Get and List operations, plus `write` for Connect, Media Upload, Upload Image From URL, Submit Plan, Create Slideshow, Publish Video, and Publish Slideshow.
 4. Paste the key into the n8n credential's **API Key** field. n8n stores it encrypted and masks it in the UI.
 
 Credential fields:
@@ -59,14 +59,18 @@ Agent keys are agent-authority credentials: they can never approve their own wor
 | Account | Get Performance | Normalized performance snapshot for one account over a 7d or 30d window. |
 | Account | Get Best Posts | Rank an account's posts by an evidence-backed metric (views, likes, comments, shares, saves, watch time, average watch %, completion %, follower delta). |
 | Media | Upload | Read an MP4 or QuickTime n8n binary property, obtain a scoped upload contract, PUT the bytes directly to private storage, and return an opaque media handle/status. |
+| Media | Upload Image From URL | 0.5.0. Download a PNG, JPEG, GIF or WebP, read its real type and pixel size from the bytes, store it privately, and return its media handle (for a slideshow cover photo). |
 | Media | Get Status | Read whether a media handle is `pending`, `stored`, or `failed`. |
 | Plan | Submit | Submit a time-bounded publication plan (max 14 days, max 20 posts) for one human approval. |
 | Plan | Get | Read plan status and structured reviewer feedback. |
 | Post | Publish Video | Create a short-form video publish with each provider's supported safety defaults, optionally scheduled in UTC. Plan ID, Intent, and Agent Identity are first-class fields. |
+| Post | Publish Slideshow | 0.5.0. Post a rendered slideshow (its media handles in order) as one multi-image post to TikTok, Instagram, Facebook or LinkedIn, optionally scheduled in UTC. |
 | Post | Get | Read publish state and any approval feedback. |
 | Post | Get Performance | Normalized performance snapshot for one post. |
 | Brief | Get | The workspace-owned brand guidance to read before planning or writing content. |
 | Digest | Get | The latest completed weekly digest of observed outcomes. |
+| Slideshow | Create | 0.5.0. Render slides on the workspace brand kit from simple fields (title, points, call to action) or a slides JSON array, wait until they are ready, and return `media_handles` in order. |
+| Slideshow | Get | 0.5.0. Read a slideshow's state (`rendering`, `ready`, `refused`, `failed`) and, once ready, its slides. |
 
 Every Postdom API write request carries an `Idempotency-Key` header. Leave the optional Idempotency Key field empty and the node generates a fresh key per execution; set it explicitly when you want retries to be deduplicated across executions. API requests identify themselves with `X-Postdom-Source: n8n`. The binary PUT is different by design: it goes straight to the single short-lived signed storage URL with only the exact returned `Content-Type` and `Content-Length`; the Postdom credential and source header are never sent to storage.
 
@@ -128,7 +132,7 @@ Import via **Workflows → Add workflow → Import from file**, then attach your
 
 1. Add **Postdom** with Resource `Post`, Operation `Publish Video`.
 2. Choose exactly one Video Source: a Media Handle returned by Media Upload, or the existing Video URL path for a publicly fetchable file. Set Account IDs, Caption, and Intent. Set the Plan ID field to publish under an approved plan, and Agent Identity to tell the human reviewer who is publishing. Optionally set Publish At (UTC) under Additional Fields.
-3. Every publish uses the safety controls each provider exposes (TikTok `SELF_ONLY`, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure, and Facebook Reel mode with no Postdom-controlled privacy or AI-disclosure setting). Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `postdom_n8n_guidance.guidance`, never an error.
+3. Every publish uses the safety controls each provider exposes (TikTok `PUBLIC_TO_EVERYONE` unless you choose another TikTok Privacy under Additional Fields, Instagram reel flagged as AI-generated, YouTube `private` with synthetic-media disclosure, and Facebook Reel mode with no Postdom-controlled privacy or AI-disclosure setting). From 0.5.0, Additional Fields also take Allow Comments (TikTok, off unless set), AI Label (on unless you turn it off; TikTok, Instagram and YouTube), TikTok Commercial Content, YouTube Visibility (Private, Public or Unlisted) and YouTube Title. Posts flow automatically inside an account's policy or await human review on review-mode accounts; landing in review returns a success item with `postdom_n8n_guidance.guidance`, never an error.
 4. Read the outcome with Operation `Get` (or the **Postdom Trigger**), then measure with Operation `Get Performance` once the post has been live for a while.
 
 ### Media: upload a private video
@@ -141,6 +145,13 @@ The `0.4.0` node requires measured width, height, and duration so Postdom can va
 2. Add **Postdom** with Resource `Media`, Operation `Upload`; name the binary property and choose the intended destination platforms. The node asks Postdom for a workspace-scoped, short-lived PUT contract, then sends the bytes directly to private storage. Video bytes never pass through the Postdom API process.
 3. Leave Wait for Storage on to poll with bounded backoff. The node returns the exact `pending`, `stored`, or `failed` state; a timeout is an honest `pending`, not a fabricated success. The temporary upload URL is never included in node output.
 4. Pass `media_handle` to Post → Publish Video with Video Source `Media Handle`. You may also use Media → Get Status separately.
+
+### Slideshow: turn outside content into a posted carousel (0.5.0)
+
+1. Optional cover photo: add **Postdom** with Resource `Media`, Operation `Upload Image From URL` and map a product photo or thumbnail URL. It returns a `media_handle` once the image is stored.
+2. Add **Postdom** with Resource `Slideshow`, Operation `Create`. Choose a Slide Size (`4:5` for Instagram and LinkedIn, `3:4` for a TikTok photo post). With Slides From `Simple Fields`, set a Title, up to five Points (one per line) and a Call to Action; add the cover photo handle under Slide Options. With `Slides JSON`, map an array from a Code or AI node, one template a slide (`cover`, `cover_image`, `text_image`, `list`, `checklist`, `step`, `stat`, `compare`, `quote`, `myth_fact`, `end_card`).
+3. The node waits until the slides are rendered and returns `media_handles` in order. A slide whose text does not fit fails the item with every refused field named; shorten them and run again. On a timeout the item comes back `rendering` with its `slideshow_id` for Slideshow -> Get.
+4. Add **Postdom** with Resource `Post`, Operation `Publish Slideshow`. Set Account IDs (TikTok, Instagram, Facebook or LinkedIn), Media Handles `{{ $json.media_handles }}`, Caption and Intent. TikTok goes out to Everyone as a photo post with TikTok's recommended music unless you choose otherwise; Instagram and Facebook post to the feed; LinkedIn posts a document carousel titled from the caption's first line or LinkedIn Document Title. The AI label is on unless you turn it off.
 
 ### Brief: fetch guidance before generating content
 

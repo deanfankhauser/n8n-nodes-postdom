@@ -1,3 +1,15 @@
+2026-10-09 — slideshows, image upload and publish options; TikTok public by default
+
+- New operations: Slideshow Create and Get, Media Upload Image From URL, and Post Publish Slideshow
+  (one multi-image post to TikTok, Instagram, Facebook or LinkedIn). A workflow that posts a
+  slideshow no longer needs an HTTP Request node.
+- Publish Video takes TikTok Privacy, Allow Comments, AI Label, TikTok Commercial Content, YouTube
+  Visibility and YouTube Title under Additional Fields. TikTok now defaults to `PUBLIC_TO_EVERYONE`
+  (it was `SELF_ONLY`); Only me stays selectable.
+- `n8n-nodes-postdom@0.5.0` is published from this commit through OIDC trusted publishing. Node and
+  request sources are byte-identical to the monorepo's `integrations/n8n` at 7dd94f826. Credentials,
+  the trigger node and the shipped templates are unchanged.
+
 2026-09-03 — nine destinations, and the connect picker narrowed to the ones with a redirect
 
 - Both platform pickers were a hardcoded four (Instagram, LinkedIn, TikTok, YouTube), written out
